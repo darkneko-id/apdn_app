@@ -33,7 +33,7 @@ async def discover_download_urls(
     headers = {"User-Agent": user_agent}
     logger.info("Scraping P3DN homepage for export links", extra={"url": homepage_url})
 
-    async with httpx.AsyncClient(follow_redirects=True, timeout=timeout) as client:
+    async with httpx.AsyncClient(follow_redirects=True, timeout=timeout, verify=False) as client:
         response = await client.get(homepage_url, headers=headers)
         response.raise_for_status()
 
