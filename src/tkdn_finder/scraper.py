@@ -24,16 +24,19 @@ async def discover_download_urls(
     homepage_url: str,
     timeout: int = SCRAPER_TIMEOUT_SECONDS,
     user_agent: str = DEFAULT_USER_AGENT,
+    verify_ssl: bool = True,
 ) -> dict[str, str]:
-    """Scrape the P3DN homepage to find export download URLs.
+    """Scrape the P3DN rekap page to find export download URLs.
 
     Returns a dict mapping year string to full URL, e.g. {"2024": "https://...", "2025": "..."}.
     Raises ValueError if no export links are found.
     """
     headers = {"User-Agent": user_agent}
-    logger.info("Scraping P3DN homepage for export links", extra={"url": homepage_url})
+    if not verify_ssl:
+        logger.warning("TLS verification disabled for P3DN scraper — MITM risk accepted via config")
+    logger.info("Scraping P3DN page for export links", extra={"url": homepage_url})
 
-    async with httpx.AsyncClient(follow_redirects=True, timeout=timeout) as client:
+    async with httpx.AsyncClient(follow_redirects=True, timeout=timeout, verify=verify_ssl) as client:
         response = await client.get(homepage_url, headers=headers)
         response.raise_for_status()
 
@@ -76,13 +79,14 @@ async def discover_with_fallback(
     cached_urls: dict[str, str],
     timeout: int = SCRAPER_TIMEOUT_SECONDS,
     user_agent: str = DEFAULT_USER_AGENT,
+    verify_ssl: bool = True,
 ) -> dict[str, str]:
     """Try to discover URLs; fall back to cached URLs on any error.
 
     Raises ValueError if no discovered and no cached URLs are available.
     """
     try:
-        return await discover_download_urls(homepage_url, timeout=timeout, user_agent=user_agent)
+        return await discover_download_urls(homepage_url, timeout=timeout, user_agent=user_agent, verify_ssl=verify_ssl)
     except Exception as exc:
         logger.warning(
             "Failed to discover export URLs, using cache",

@@ -51,6 +51,7 @@ async def download_file(
     timeout: int = DOWNLOAD_TIMEOUT_SECONDS,
     max_retries: int = DOWNLOAD_RETRY_COUNT,
     user_agent: str = DEFAULT_USER_AGENT,
+    verify_ssl: bool = True,
 ) -> str:
     """Download a P3DN export file to raw_dir/tkdn_{year}.html.
 
@@ -65,12 +66,14 @@ async def download_file(
     # Redact year token from logs
     safe_url = url.split("?")[0] + "?[redacted]" if "?" in url else url
 
+    if not verify_ssl:
+        logger.warning("TLS verification disabled for downloader year=%s — MITM risk accepted via config", year)
     logger.info("Starting download for year=%s url=%s", year, safe_url)
 
     last_exc: Exception | None = None
     for attempt in range(1, max_retries + 1):
         try:
-            async with httpx.AsyncClient(follow_redirects=True, timeout=timeout) as client:
+            async with httpx.AsyncClient(follow_redirects=True, timeout=timeout, verify=verify_ssl) as client:
                 response = await client.get(url, headers=headers)
                 response.raise_for_status()
                 content = response.content

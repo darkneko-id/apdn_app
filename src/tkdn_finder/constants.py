@@ -1,7 +1,7 @@
 # src/tkdn_finder/constants.py
 """All magic values live here. Never inline constants in business logic."""
 
-P3DN_HOMEPAGE_URL = "https://p3dn.kemenperin.go.id/"
+P3DN_HOMEPAGE_URL = "https://p3dn.kemenperin.go.id/rekap.php"
 EXPORT_LINK_HREF_PATTERN = r"export_excel\.php"
 YEAR_EXTRACTION_PATTERN = r"(\d{4})"
 DEFAULT_USER_AGENT = "TKDN-Finder/0.1 (procurement tooling)"

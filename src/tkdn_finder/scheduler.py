@@ -36,6 +36,7 @@ async def refresh_all_years(settings: object, db_path: str) -> None:
             cached_urls,
             timeout=settings.p3dn.download_timeout_seconds,
             user_agent=settings.p3dn.user_agent,
+            verify_ssl=settings.p3dn.verify_ssl,
         )
     except Exception as exc:
         logger.exception("Cannot get any download URLs, aborting refresh", extra={"error": str(exc)})
@@ -58,6 +59,7 @@ async def refresh_all_years(settings: object, db_path: str) -> None:
                 timeout=settings.p3dn.download_timeout_seconds,
                 max_retries=settings.p3dn.retry_count,
                 user_agent=settings.p3dn.user_agent,
+                verify_ssl=settings.p3dn.verify_ssl,
             )
             rows = parse_html_export(file_path, year)
             stats = merge_and_upsert(conn, rows)

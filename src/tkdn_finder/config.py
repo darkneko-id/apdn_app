@@ -14,11 +14,14 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class P3dnSettings(BaseSettings):
     """P3DN portal connection settings."""
 
-    homepage_url: str = "https://p3dn.kemenperin.go.id/"
+    homepage_url: str = "https://p3dn.kemenperin.go.id/rekap.php"
     user_agent: str = "TKDN-Finder/0.1 (procurement tooling)"
     download_timeout_seconds: int = 120
     retry_count: int = 3
     retry_backoff_seconds: int = 5
+    # Set False only if P3DN serves an untrusted/self-signed cert in your environment.
+    # Never disable in production without understanding the MITM risk.
+    verify_ssl: bool = True
 
     model_config = SettingsConfigDict(env_prefix="TKDN_P3DN__")
 
