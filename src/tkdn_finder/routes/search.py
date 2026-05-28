@@ -44,9 +44,9 @@ async def index(request: Request) -> HTMLResponse:
         conn.close()
 
     return templates.TemplateResponse(
+        request,
         "index.html",
         {
-            "request": request,
             "kbli_list": kbli_list,
             "year_list": year_list,
             "debounce_ms": SEARCH_DEBOUNCE_MS,
@@ -105,9 +105,9 @@ async def search_htmx(
     total_pages = max(1, (result["total"] + limit - 1) // limit)
 
     return templates.TemplateResponse(
+        request,
         "results.html",
         {
-            "request": request,
             "rows": tagged_rows,
             "total": result["total"],
             "query_time_ms": result["query_time_ms"],

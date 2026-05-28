@@ -47,9 +47,9 @@ async def cert_detail(cert_id: int, request: Request) -> HTMLResponse:
         validity_label = "valid"
 
     return templates.TemplateResponse(
+        request,
         "detail.html",
         {
-            "request": request,
             "cert": cert,
             "validity_label": validity_label,
             "today": today,

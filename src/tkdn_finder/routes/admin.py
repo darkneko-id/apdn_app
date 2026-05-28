@@ -43,11 +43,11 @@ async def admin_page(request: Request) -> HTMLResponse:
         conn.close()
 
     return templates.TemplateResponse(
+        request,
         "admin.html",
         {
-            "request": request,
             "stats": stats,
-            "runs": runs,
+            "download_runs": runs,
             "synonyms": synonyms,
         },
     )
