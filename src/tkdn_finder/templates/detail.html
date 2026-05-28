@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+{% block title %}{{ cert.nama_produk }} — TKDN Finder{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl space-y-6">
+    <!-- Back link -->
+    <div>
+        <a href="javascript:history.back()" class="text-sm text-blue-600 hover:underline flex items-center gap-1">
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/>
+            </svg>
+            Kembali ke hasil pencarian
+        </a>
+    </div>
+
+    <!-- Certificate card -->
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <!-- Header -->
+        <div class="bg-blue-800 px-6 py-5 text-white">
+            <div class="flex items-start justify-between gap-4">
+                <div>
+                    <h1 class="text-xl font-bold">{{ cert.nama_produk }}</h1>
+                    <p class="mt-1 text-blue-200 text-sm">{{ cert.nama_perusahaan }}</p>
+                </div>
+                <div class="flex-shrink-0">
+                    {% if validity_label == 'valid' %}
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-green-400/20 text-green-100 border border-green-400/30">
+                        Berlaku
+                    </span>
+                    {% elif validity_label == 'expiring' %}
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-yellow-400/20 text-yellow-100 border border-yellow-400/30">
+                        Segera Habis
+                    </span>
+                    {% elif validity_label == 'expired' %}
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-red-400/20 text-red-100 border border-red-400/30">
+                        Kadaluarsa
+                    </span>
+                    {% else %}
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-gray-400/20 text-gray-100 border border-gray-400/30">
+                        Tidak Diketahui
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- TKDN value highlight -->
+        <div class="bg-gray-50 px-6 py-4 border-b border-gray-200">
+            <div class="flex items-center gap-8">
+                <div>
+                    <p class="text-xs text-gray-500 uppercase tracking-wide">Nilai TKDN</p>
+                    {% if cert.nilai_tkdn is not none %}
+                    <p class="text-3xl font-bold mt-0.5
+                        {% if cert.nilai_tkdn >= 40 %}text-green-700
+                        {% elif cert.nilai_tkdn >= 25 %}text-yellow-700
+                        {% else %}text-red-700{% endif %}">
+                        {{ "%.2f"|format(cert.nilai_tkdn) }}<span class="text-lg font-normal">%</span>
+                    </p>
+                    {% else %}
+                    <p class="text-2xl font-bold text-gray-400 mt-0.5">—</p>
+                    {% endif %}
+                </div>
+                <div>
+                    <p class="text-xs text-gray-500 uppercase tracking-wide">Masa Berlaku Akhir</p>
+                    {% if cert.masa_berlaku_akhir %}
+                    <p class="text-lg font-semibold text-gray-800 mt-0.5">
+                        {{ cert.masa_berlaku_akhir.strftime('%d %B %Y') }}
+                    </p>
+                    {% if validity_label == 'expiring' %}
+                    {% set days_left = (cert.masa_berlaku_akhir - today).days %}
+                    <p class="text-xs text-yellow-600">{{ days_left }} hari lagi</p>
+                    {% elif validity_label == 'expired' %}
+                    {% set days_past = (today - cert.masa_berlaku_akhir).days %}
+                    <p class="text-xs text-red-600">Kadaluarsa {{ days_past }} hari lalu</p>
+                    {% endif %}
+                    {% else %}
+                    <p class="text-lg font-semibold text-gray-400 mt-0.5">—</p>
+                    {% endif %}
+                </div>
+                {% if cert.tahun_sumber %}
+                <div>
+                    <p class="text-xs text-gray-500 uppercase tracking-wide">Tahun Sumber</p>
+                    <p class="text-lg font-semibold text-gray-800 mt-0.5">{{ cert.tahun_sumber }}</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Details grid -->
+        <div class="px-6 py-5 grid grid-cols-1 sm:grid-cols-2 gap-5">
+            <div>
+                <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Nama Perusahaan</p>
+                <p class="mt-1 text-gray-900">{{ cert.nama_perusahaan }}</p>
+            </div>
+
+            <div>
+                <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Nama Produk</p>
+                <p class="mt-1 text-gray-900">{{ cert.nama_produk }}</p>
+            </div>
+
+            <div class="sm:col-span-2">
+                <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Spesifikasi</p>
+                <p class="mt-1 text-gray-900 whitespace-pre-wrap">{{ cert.spesifikasi }}</p>
+            </div>
+
+            {% if cert.merek %}
+            <div>
+                <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Merek</p>
+                <p class="mt-1 text-gray-900">{{ cert.merek }}</p>
+            </div>
+            {% endif %}
+
+            {% if cert.tipe %}
+            <div>
+                <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Tipe</p>
+                <p class="mt-1 text-gray-900">{{ cert.tipe }}</p>
+            </div>
+            {% endif %}
+
+            {% if cert.kode_hs %}
+            <div>
+                <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Kode HS</p>
+                <p class="mt-1 text-gray-900 font-mono">{{ cert.kode_hs }}</p>
+            </div>
+            {% endif %}
+
+            {% if cert.kbli %}
+            <div>
+                <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">KBLI</p>
+                <p class="mt-1 text-gray-900 font-mono">{{ cert.kbli }}</p>
+            </div>
+            {% endif %}
+
+            {% if cert.kelompok_barang %}
+            <div>
+                <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Kelompok Barang</p>
+                <p class="mt-1 text-gray-900">{{ cert.kelompok_barang }}</p>
+            </div>
+            {% endif %}
+
+            {% if cert.provinsi %}
+            <div>
+                <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Provinsi</p>
+                <p class="mt-1 text-gray-900">{{ cert.provinsi }}</p>
+            </div>
+            {% endif %}
+
+            {% if cert.alamat %}
+            <div class="sm:col-span-2">
+                <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Alamat</p>
+                <p class="mt-1 text-gray-900 text-sm">{{ cert.alamat }}</p>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Footer -->
+        <div class="bg-gray-50 px-6 py-3 border-t border-gray-200 flex items-center justify-between">
+            <p class="text-xs text-gray-400">ID internal: {{ cert.id }}</p>
+            <a
+                href="/export.xlsx?q={{ cert.nama_produk }}"
+                class="text-xs text-blue-600 hover:underline"
+            >
+                Unduh data serupa (Excel)
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}
