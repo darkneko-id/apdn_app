@@ -14,6 +14,7 @@ from ..config import get_settings
 from ..constants import (
     SEARCH_RESULT_LIMIT_MAX,
     TKDN_DEFAULT_MIN_FILTER,
+    VALIDITY_EXPIRING_SOON_DAYS,
 )
 from ..db import get_connection
 from ..models import CertificateRow
@@ -105,7 +106,7 @@ async def export_excel(
             validity = "Unknown"
         elif cert.masa_berlaku_akhir < today:
             validity = "Expired"
-        elif (cert.masa_berlaku_akhir - today).days <= 60:
+        elif (cert.masa_berlaku_akhir - today).days <= VALIDITY_EXPIRING_SOON_DAYS:
             validity = "Expiring Soon"
         else:
             validity = "Valid"

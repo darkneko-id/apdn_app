@@ -49,12 +49,24 @@ class Settings(BaseSettings):
     )
 
     def get_db_path(self) -> str:
-        """Compute the SQLite database path from data_dir."""
-        return os.path.join(self.data_dir, "tkdn.db")
+        """Compute the SQLite database path, using APPDATA on Windows."""
+        if os.name == "nt":
+            appdata = os.environ.get("APPDATA", os.path.expanduser("~"))
+            base = os.path.join(appdata, "TKDN-Finder")
+        else:
+            base = self.data_dir
+        os.makedirs(base, exist_ok=True)
+        return os.path.join(base, "tkdn.db")
 
     def get_raw_dir(self) -> str:
         """Compute the raw download directory."""
-        return os.path.join(self.data_dir, "raw")
+        if os.name == "nt":
+            appdata = os.environ.get("APPDATA", os.path.expanduser("~"))
+            base = os.path.join(appdata, "TKDN-Finder", "raw")
+        else:
+            base = os.path.join(self.data_dir, "raw")
+        os.makedirs(base, exist_ok=True)
+        return base
 
 
 @lru_cache(maxsize=1)

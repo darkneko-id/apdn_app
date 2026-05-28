@@ -26,6 +26,23 @@ from .synonyms import expand_query, load_synonyms
 
 logger = logging.getLogger(__name__)
 
+_synonym_cache: dict[str, list[str]] = {}
+_synonym_cache_dirty: bool = True
+
+
+def invalidate_synonym_cache() -> None:
+    """Call after any synonym write to force reload on next search."""
+    global _synonym_cache_dirty
+    _synonym_cache_dirty = True
+
+
+def _get_synonyms(conn: sqlite3.Connection) -> dict[str, list[str]]:
+    global _synonym_cache, _synonym_cache_dirty
+    if _synonym_cache_dirty:
+        _synonym_cache = load_synonyms(conn)
+        _synonym_cache_dirty = False
+    return _synonym_cache
+
 
 def _build_fts_query(query: str, synonyms: dict[str, list[str]]) -> str:
     """Build an FTS5 MATCH query string with synonym expansion."""
@@ -114,7 +131,7 @@ def search(
     start_time = time.perf_counter()
     today = date.today()
 
-    synonyms = load_synonyms(conn)
+    synonyms = _get_synonyms(conn)
 
     # --- Stage 1: FTS5 candidate retrieval ---
     where_clauses: list[str] = []
@@ -158,25 +175,25 @@ def search(
         candidates = [dict(row) for row in cursor.fetchall()]
     except sqlite3.OperationalError as exc:
         logger.warning("FTS5 query failed, falling back to LIKE search: %s", exc)
-        # Fallback: simple LIKE search
+        # Rebuild only the FTS clause with LIKE; preserve all other filters already in where_clauses
+        fallback_clauses = [c for c in where_clauses if "tkdn_search" not in c]
+        fallback_params = [p for c, p in zip(where_clauses, params) if "tkdn_search" not in c]
         if query.strip():
             like_val = f"%{query.strip()}%"
-            where_clauses = [
-                "(c.nama_produk LIKE ? OR c.nama_perusahaan LIKE ? OR c.spesifikasi LIKE ?)"
-            ]
-            params = [like_val, like_val, like_val]
-            where_sql = "WHERE " + " AND ".join(where_clauses)
-        else:
-            where_sql = ""
-            params = []
+            fallback_clauses.insert(
+                0,
+                "(c.nama_produk LIKE ? OR c.nama_perusahaan LIKE ? OR c.spesifikasi LIKE ?)",
+            )
+            fallback_params = [like_val, like_val, like_val] + fallback_params
 
-        candidate_sql = f"""
+        fallback_where = ("WHERE " + " AND ".join(fallback_clauses)) if fallback_clauses else ""
+        fallback_sql = f"""
             SELECT c.*
             FROM tkdn_certificate c
-            {where_sql}
+            {fallback_where}
             LIMIT {FTS_CANDIDATE_LIMIT}
         """
-        cursor = conn.execute(candidate_sql, params)
+        cursor = conn.execute(fallback_sql, fallback_params)
         candidates = [dict(row) for row in cursor.fetchall()]
 
     if not candidates:

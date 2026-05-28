@@ -54,18 +54,13 @@ def merge_and_upsert(conn: sqlite3.Connection, rows: list[dict[str, Any]]) -> di
     for row in rows:
         try:
             row_with_ts = {**row, "ingested_at": now_str}
-            cursor = conn.execute(insert_sql, row_with_ts)
-            # SQLite changes() returns 1 for both INSERT and UPDATE on conflict
-            # Use lastrowid: if lastrowid > existing max id → insert, else → update
-            changes = conn.execute("SELECT changes()").fetchone()[0]
-            if changes == 1:
-                # Distinguish insert vs update by checking if rowid was newly created
-                # SQLite sets last_insert_rowid() on insert; on update it keeps old rowid
-                # We approximate: if the cursor.lastrowid matches a freshly incremented id, it's insert
-                # A simpler heuristic: track total_changes before/after
+            before_rowid = conn.execute("SELECT MAX(id) FROM tkdn_certificate").fetchone()[0] or 0
+            conn.execute(insert_sql, row_with_ts)
+            after_rowid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            if after_rowid > before_rowid:
                 stats["inserted"] += 1
             else:
-                stats["skipped"] += 1
+                stats["updated"] += 1
         except sqlite3.IntegrityError as exc:
             logger.warning(
                 "Integrity error upserting row",

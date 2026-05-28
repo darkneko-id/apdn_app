@@ -3,11 +3,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 
 from fastapi import APIRouter, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from ..config import get_settings
@@ -53,16 +54,21 @@ async def admin_page(request: Request) -> HTMLResponse:
     )
 
 
+_background_tasks: set[asyncio.Task] = set()  # keep strong refs to prevent GC cancellation
+
+
 @router.post("/refresh")
 async def trigger_refresh(request: Request) -> dict[str, str]:
     """Manually trigger the refresh_all_years job."""
+    import asyncio
+
     from ..scheduler import refresh_all_years
 
     settings = get_settings()
 
-    import asyncio
-
-    asyncio.create_task(refresh_all_years(settings, settings.get_db_path()))
+    task = asyncio.create_task(refresh_all_years(settings, settings.get_db_path()))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
     logger.info("Manual refresh triggered via admin")
     return {"status": "triggered", "message": "Refresh job queued"}
 
@@ -84,10 +90,11 @@ async def add_synonym(
     request: Request,
     canonical: str = Form(...),
     variants: str = Form(...),
-) -> RedirectResponse:
-    """Add or update a synonym entry."""
+) -> HTMLResponse:
+    """Add or update a synonym entry; returns updated synonym list partial for HTMX."""
+    templates: Jinja2Templates = request.app.state.templates
     settings = get_settings()
-    # Validate variants as JSON array or comma-separated
+
     variants_stripped = variants.strip()
     if variants_stripped.startswith("["):
         try:
@@ -96,17 +103,20 @@ async def add_synonym(
         except json.JSONDecodeError:
             raise HTTPException(status_code=400, detail="Invalid JSON for variants")
     else:
-        # Comma-separated
         parts = [v.strip() for v in variants_stripped.split(",") if v.strip()]
         variants_json = json.dumps(parts, ensure_ascii=False)
 
     conn = get_connection(settings.get_db_path())
     try:
         upsert_synonym(conn, canonical.strip().lower(), variants_json)
+        synonyms = get_synonyms_all(conn)
     finally:
         conn.close()
 
-    return RedirectResponse(url="/admin", status_code=303)
+    from ..search import invalidate_synonym_cache
+    invalidate_synonym_cache()
+
+    return templates.TemplateResponse(request, "partials/synonym_list.html", {"synonyms": synonyms})
 
 
 @router.post("/synonym/delete/{synonym_id}")
