@@ -1,0 +1,14 @@
+data_dir: "data"
+log_level: "INFO"
+host: "127.0.0.1"
+port: 8000
+
+p3dn:
+  homepage_url: "https://p3dn.kemenperin.go.id/"
+  user_agent: "TKDN-Finder/0.1 (procurement tooling; contact: irsan@phr.pertamina.com)"
+  download_timeout_seconds: 120
+  retry_count: 3
+  retry_backoff_seconds: 5
+
+schedule:
+  cron: "0 2 * * *"

@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block title %}Admin — TKDN Finder{% endblock %}
+
+{% block content %}
+<div class="space-y-8">
+    <!-- Header -->
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900">Panel Admin</h1>
+            <p class="mt-1 text-sm text-gray-500">Kelola data, jadwal refresh, dan sinonim.</p>
+        </div>
+        <button
+            hx-post="/admin/refresh"
+            hx-target="#refresh-status"
+            hx-swap="innerHTML"
+            hx-indicator="#refresh-spinner"
+            class="flex items-center gap-2 px-5 py-2.5 bg-blue-700 text-white text-sm font-medium
+                   rounded-lg hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500
+                   transition-colors disabled:opacity-50"
+        >
+            <svg id="refresh-spinner" class="htmx-indicator animate-spin h-4 w-4 text-white"
+                 fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+            </svg>
+            Refresh Sekarang
+        </button>
+    </div>
+
+    <!-- Refresh status message -->
+    <div id="refresh-status" class="empty:hidden"></div>
+
+    <!-- Stats cards -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div class="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+            <p class="text-xs text-gray-500 uppercase tracking-wide font-medium">Total Sertifikat</p>
+            <p class="mt-1 text-3xl font-bold text-gray-900">{{ "{:,}".format(stats.total_rows) }}</p>
+        </div>
+        <div class="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+            <p class="text-xs text-gray-500 uppercase tracking-wide font-medium">Refresh Terakhir</p>
+            <p class="mt-1 text-base font-semibold text-gray-800">
+                {% if stats.last_refresh %}{{ stats.last_refresh[:19] | replace("T", " ") }}{% else %}—{% endif %}
+            </p>
+        </div>
+        <div class="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+            <p class="text-xs text-gray-500 uppercase tracking-wide font-medium">Data per Tahun</p>
+            <div class="mt-1 space-y-0.5">
+                {% for year, count in stats.rows_per_year.items() %}
+                <div class="flex justify-between text-sm">
+                    <span class="text-gray-600">{{ year }}</span>
+                    <span class="font-semibold text-gray-900">{{ "{:,}".format(count) }}</span>
+                </div>
+                {% else %}
+                <p class="text-sm text-gray-400 italic">Belum ada data</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Download history -->
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div class="px-5 py-4 border-b border-gray-100">
+            <h2 class="text-base font-semibold text-gray-900">Riwayat Download (10 Terakhir)</h2>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-100 text-sm">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tahun</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Mulai</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Selesai</th>
+                        <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Baris</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Error</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-50">
+                    {% for run in download_runs %}
+                    <tr class="hover:bg-gray-50 transition-colors">
+                        <td class="px-4 py-3 font-medium text-gray-800">{{ run.year_label or "—" }}</td>
+                        <td class="px-4 py-3">
+                            {% if run.status == "success" %}
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                                ✓ Berhasil
+                            </span>
+                            {% elif run.status == "failed" %}
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                                ✗ Gagal
+                            </span>
+                            {% else %}
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
+                                {{ run.status or "—" }}
+                            </span>
+                            {% endif %}
+                        </td>
+                        <td class="px-4 py-3 text-gray-500 whitespace-nowrap">
+                            {% if run.started_at %}{{ run.started_at | string | truncate(19, True, "") }}{% else %}—{% endif %}
+                        </td>
+                        <td class="px-4 py-3 text-gray-500 whitespace-nowrap">
+                            {% if run.finished_at %}{{ run.finished_at | string | truncate(19, True, "") }}{% else %}—{% endif %}
+                        </td>
+                        <td class="px-4 py-3 text-right font-mono text-gray-700">
+                            {% if run.row_count is not none %}{{ "{:,}".format(run.row_count) }}{% else %}—{% endif %}
+                        </td>
+                        <td class="px-4 py-3 text-red-600 text-xs max-w-xs truncate">
+                            {{ run.error_message or "" }}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="6" class="px-4 py-8 text-center text-sm text-gray-400 italic">
+                            Belum ada riwayat download.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Synonyms management -->
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+            <h2 class="text-base font-semibold text-gray-900">Manajemen Sinonim</h2>
+            <span class="text-xs text-gray-400">{{ synonyms | length }} entri</span>
+        </div>
+
+        <!-- Add synonym form -->
+        <div class="px-5 py-4 border-b border-gray-100 bg-gray-50">
+            <form
+                hx-post="/admin/synonym/add"
+                hx-target="#synonym-list"
+                hx-swap="outerHTML"
+                class="flex flex-wrap gap-3 items-end"
+            >
+                <div class="flex flex-col gap-1">
+                    <label class="text-xs font-medium text-gray-600">Kata Kanonik</label>
+                    <input
+                        type="text"
+                        name="canonical"
+                        placeholder="pump"
+                        required
+                        class="px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 w-36"
+                    />
+                </div>
+                <div class="flex flex-col gap-1">
+                    <label class="text-xs font-medium text-gray-600">Varian (pisah koma)</label>
+                    <input
+                        type="text"
+                        name="variants"
+                        placeholder="pompa, pompa sentrifugal"
+                        required
+                        class="px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 w-64"
+                    />
+                </div>
+                <button
+                    type="submit"
+                    class="px-4 py-2 text-sm bg-blue-700 text-white rounded-md hover:bg-blue-800 transition-colors"
+                >
+                    Tambah / Perbarui
+                </button>
+            </form>
+        </div>
+
+        <!-- Synonym list (HTMX target) -->
+        {% include "partials/synonym_list.html" %}
+    </div>
+</div>
+{% endblock %}
