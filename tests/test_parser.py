@@ -178,10 +178,8 @@ class TestParseHtmlExport:
         rows = parse_html_export(sample_2024_path, "2024")
         assert all(r["tahun_sumber"] == 2024 for r in rows)
 
-    def test_duplicate_cert_across_years(self, tmp_path: Path) -> None:
-        """Same product parsed from two years yields two separate rows."""
-        rows_2024 = parse_html_export(str(tmp_path / ".."), "2024") or []
-        # Both fixtures have 'Pompa Sentrifugal' for 'PT Pompa Nusantara'
+    def test_duplicate_cert_across_years(self) -> None:
+        """Same product parsed from two years yields two separate rows with correct year."""
         from pathlib import Path as P
         rows_2024 = parse_html_export(
             str(P(__file__).parent / "fixtures" / "sample_2024.html"), "2024"

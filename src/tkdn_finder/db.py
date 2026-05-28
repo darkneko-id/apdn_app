@@ -38,10 +38,9 @@ def init_db(db_path_or_conn: str | sqlite3.Connection) -> None:
 
 
 def _apply_migrations(conn: sqlite3.Connection) -> None:
-    """Execute migration SQL file."""
+    """Execute migration SQL file using executescript for multi-statement support."""
     migration_file = _MIGRATION_DIR / "001_initial.sql"
     if not migration_file.exists():
-        # Try finding migrations relative to package
         alt = Path(__file__).parent.parent.parent / "migrations" / "001_initial.sql"
         if alt.exists():
             migration_file = alt
@@ -50,16 +49,8 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
             return
 
     sql = migration_file.read_text(encoding="utf-8")
-    # Execute each statement individually to handle multi-statement scripts
-    for statement in sql.split(";"):
-        stmt = statement.strip()
-        if stmt:
-            try:
-                conn.execute(stmt)
-            except sqlite3.OperationalError as exc:
-                # Some statements may fail if already applied — warn and continue
-                logger.debug("Migration statement skipped: %s | error: %s", stmt[:60], exc)
-    conn.commit()
+    # executescript handles multi-statement DDL including CREATE TRIGGER ... BEGIN...END
+    conn.executescript(sql)
     logger.info("Database schema initialized")
 
 
