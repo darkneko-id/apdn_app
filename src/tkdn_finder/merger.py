@@ -37,10 +37,8 @@ def merge_and_upsert(conn: sqlite3.Connection, rows: list[dict[str, Any]]) -> di
             (:nama_perusahaan, :nama_produk, :spesifikasi, :merek, :tipe, :nilai_tkdn,
              :kode_hs, :kbli, :kelompok_barang, :alamat, :provinsi, :masa_berlaku_akhir,
              :tahun_sumber, :ingested_at)
-        ON CONFLICT(nama_perusahaan, nama_produk, spesifikasi) DO UPDATE SET
-            merek = excluded.merek,
-            tipe = excluded.tipe,
-            nilai_tkdn = excluded.nilai_tkdn,
+        ON CONFLICT(nama_perusahaan, nama_produk, spesifikasi, merek, nilai_tkdn) DO UPDATE SET
+            tipe = CASE WHEN excluded.tipe != '' THEN excluded.tipe ELSE tipe END,
             kode_hs = excluded.kode_hs,
             kbli = excluded.kbli,
             kelompok_barang = excluded.kelompok_barang,
@@ -53,7 +51,15 @@ def merge_and_upsert(conn: sqlite3.Connection, rows: list[dict[str, Any]]) -> di
 
     for row in rows:
         try:
-            row_with_ts = {**row, "ingested_at": now_str}
+            # spesifikasi and tipe are NOT NULL in schema; coerce None → ''
+            # so the ON CONFLICT dedup key stays functional across re-ingests.
+            row_with_ts = {
+                **row,
+                "ingested_at": now_str,
+                "spesifikasi": row.get("spesifikasi") or "",
+                "tipe": row.get("tipe") or "",
+                "merek": row.get("merek") or "",
+            }
             before_rowid = conn.execute("SELECT MAX(id) FROM tkdn_certificate").fetchone()[0] or 0
             conn.execute(insert_sql, row_with_ts)
             after_rowid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]

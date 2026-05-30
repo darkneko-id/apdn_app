@@ -13,6 +13,7 @@ from bs4 import BeautifulSoup
 from .constants import (
     DATE_FORMAT,
     HTML_COLUMN_MAP,
+    KBLI_PATTERN,
     REQUIRED_FIELDS,
     TKDN_SENTINEL_VALUE,
 )
@@ -21,6 +22,9 @@ logger = logging.getLogger(__name__)
 
 _EMPTY_VALUES = frozenset({"", "-", "−", "–", "—", "N/A", "n/a"})
 _WHITESPACE_RE = re.compile(r"\s+")
+_KBLI_RE = re.compile(KBLI_PATTERN)
+# Excel time-formatted TKDN: "37.01.00" means 37 hours 01 min → 37.01%
+_TKDN_TIME_RE = re.compile(r"^(\d+)\.(\d{2})\.\d{2}$")
 
 
 def _normalize_text(value: str | None) -> str | None:
@@ -38,6 +42,10 @@ def _parse_tkdn(value: str | None) -> float | None:
     if not value:
         return None
     cleaned = value.strip().replace(",", ".")
+    # P3DN HTML exports encode TKDN as Excel time: "37.01.00" (HH.MM.SS) → 37.01
+    m = _TKDN_TIME_RE.match(cleaned)
+    if m:
+        cleaned = f"{m.group(1)}.{m.group(2)}"
     try:
         return float(cleaned)
     except ValueError:
@@ -160,6 +168,12 @@ def parse_html_export(file_path: str, year: str) -> list[dict[str, Any]]:
             "provinsi",
         ):
             row_data[field] = _normalize_text(row_data.get(field))
+
+        # Validate KBLI — must be exactly 5 digits; reject label noise from source HTML
+        kbli_val = row_data.get("kbli")
+        if kbli_val and not _KBLI_RE.match(kbli_val):
+            logger.debug("Invalid KBLI %r in row %d — cleared", kbli_val, row_idx)
+            row_data["kbli"] = None
 
         # Check required fields
         missing = [f for f in REQUIRED_FIELDS if not row_data.get(f)]

@@ -6,25 +6,30 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+if TYPE_CHECKING:
+    from .config import Settings
 
 logger = logging.getLogger(__name__)
 
 
-async def refresh_all_years(settings: object, db_path: str) -> None:
+async def refresh_all_years(settings: Settings, db_path: str) -> None:
     """Download, parse, and ingest all available TKDN year datasets.
 
     Never raises. All errors are logged and persisted to download_run.
     """
-    from .config import Settings
+    from . import refresh_state as rs
     from .db import get_cached_urls, get_connection, save_download_run
     from .downloader import download_file
     from .merger import merge_and_upsert
     from .parser import parse_html_export
     from .scraper import discover_with_fallback
 
-    assert isinstance(settings, Settings)
+    # Mark running BEFORE first await so polling sees running=True immediately
+    rs.begin()
 
     conn = get_connection(db_path)
     cached_urls = get_cached_urls(conn)
@@ -40,13 +45,20 @@ async def refresh_all_years(settings: object, db_path: str) -> None:
         )
     except Exception as exc:
         logger.exception("Cannot get any download URLs, aborting refresh", extra={"error": str(exc)})
+        rs.fail(f"Gagal menemukan tautan unduhan: {exc}")
         return
 
+    rs.start(years_total=len(urls))
     logger.info("Starting refresh for years: %s", list(urls.keys()))
+
+    year_share = 90 // max(len(urls), 1)
 
     for idx, (year, url) in enumerate(urls.items()):
         if idx > 0:
             await asyncio.sleep(5)  # stagger to avoid hammering P3DN
+
+        base_pct = 10 + idx * year_share
+        rs.set_stage(f"Mengunduh data {year}...", base_pct)
 
         started_at = datetime.now(timezone.utc)
         conn = get_connection(db_path)
@@ -61,8 +73,11 @@ async def refresh_all_years(settings: object, db_path: str) -> None:
                 user_agent=settings.p3dn.user_agent,
                 verify_ssl=settings.p3dn.verify_ssl,
             )
+
+            rs.set_stage(f"Memproses data {year}...", base_pct + year_share // 2)
             rows = parse_html_export(file_path, year)
             stats = merge_and_upsert(conn, rows)
+
             finished_at = datetime.now(timezone.utc)
             save_download_run(
                 conn,
@@ -73,6 +88,7 @@ async def refresh_all_years(settings: object, db_path: str) -> None:
                 finished_at=finished_at,
                 row_count=len(rows),
             )
+            rs.year_done(len(rows))
             logger.info(
                 "Refresh success: year=%s rows=%d inserted=%d",
                 year,
@@ -84,6 +100,7 @@ async def refresh_all_years(settings: object, db_path: str) -> None:
             logger.exception(
                 "Refresh failed for year=%s", year, extra={"error": str(exc)}
             )
+            rs.fail(f"Gagal memproses data {year}: {exc}")
             try:
                 save_download_run(
                     conn,
@@ -99,19 +116,17 @@ async def refresh_all_years(settings: object, db_path: str) -> None:
                     "Could not save download run failure record",
                     extra={"error": str(save_exc)},
                 )
+            finally:
+                conn.close()
+            return
         finally:
             conn.close()
 
+    rs.finish()
 
-def create_scheduler(settings: object, db_path: str) -> AsyncIOScheduler:
-    """Create and configure an AsyncIOScheduler with the refresh job.
 
-    The cron expression comes from settings.schedule.cron.
-    """
-    from .config import Settings
-
-    assert isinstance(settings, Settings)
-
+def create_scheduler(settings: Settings, db_path: str) -> AsyncIOScheduler:
+    """Create and configure an AsyncIOScheduler with the refresh job."""
     scheduler = AsyncIOScheduler()
     cron_parts = settings.schedule.cron.split()
     if len(cron_parts) == 5:
@@ -123,20 +138,22 @@ def create_scheduler(settings: object, db_path: str) -> AsyncIOScheduler:
             settings.schedule.cron,
         )
 
-    scheduler.add_job(
-        refresh_all_years,
-        trigger="cron",
-        args=[settings, db_path],
-        minute=minute,
-        hour=hour,
-        day=day,
-        month=month,
-        day_of_week=day_of_week,
-        id="refresh_all_years",
-        replace_existing=True,
-        max_instances=1,
-        misfire_grace_time=3600,
-    )
-
-    logger.info("Scheduler configured with cron=%r", settings.schedule.cron)
+    if settings.schedule.enabled:
+        scheduler.add_job(
+            refresh_all_years,
+            trigger="cron",
+            args=[settings, db_path],
+            minute=minute,
+            hour=hour,
+            day=day,
+            month=month,
+            day_of_week=day_of_week,
+            id="refresh_all_years",
+            replace_existing=True,
+            max_instances=1,
+            misfire_grace_time=3600,
+        )
+        logger.info("Scheduler configured with cron=%r", settings.schedule.cron)
+    else:
+        logger.info("Scheduler disabled via config")
     return scheduler

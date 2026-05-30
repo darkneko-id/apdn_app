@@ -29,8 +29,8 @@ async def export_excel(
     q: str = "",
     tkdn_min: float = TKDN_DEFAULT_MIN_FILTER,
     validity_only: bool = False,
-    kbli: str | None = None,
-    year: int | None = None,
+    kbli: str = "",
+    year: str = "",
 ) -> StreamingResponse:
     """Export search results as an Excel file."""
     try:
@@ -38,6 +38,9 @@ async def export_excel(
         from openpyxl.styles import Font, PatternFill
     except ImportError as exc:
         raise RuntimeError("openpyxl not installed") from exc
+
+    year_int: int | None = int(year) if year.strip() else None
+    kbli_str: str | None = kbli.strip() or None
 
     settings = get_settings()
     conn = get_connection(settings.get_db_path())
@@ -47,8 +50,8 @@ async def export_excel(
             query=q,
             tkdn_min=tkdn_min,
             validity_only=validity_only,
-            kbli=kbli or None,
-            year=year,
+            kbli=kbli_str,
+            year=year_int,
             limit=SEARCH_RESULT_LIMIT_MAX,
             offset=0,
         )

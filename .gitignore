@@ -1,5 +1,6 @@
 data/
 *.db
+**/.DS_Store
 *.db-shm
 *.db-wal
 __pycache__/
@@ -13,3 +14,8 @@ build/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.gstack/
+
+# Planning artifacts
+docs/superpowers/
+*.spec.bak

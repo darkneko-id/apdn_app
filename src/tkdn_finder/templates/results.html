@@ -1,115 +1,159 @@
 {% if rows %}
-<!-- Summary bar -->
-<div class="flex items-center justify-between mb-3">
-    <p class="text-sm text-gray-600">
-        Menampilkan <strong>{{ rows|length }}</strong> dari <strong>{{ total }}</strong> hasil
-        {% if q %} untuk <em>"{{ q }}"</em>{% endif %}
-        <span class="text-gray-400">({{ query_time_ms }} ms)</span>
-    </p>
-    <a
-        href="/export.xlsx?q={{ q }}&tkdn_min={{ tkdn_min }}&validity_only={{ validity_only|lower }}&kbli={{ kbli or '' }}&year={{ year or '' }}"
-        class="text-xs text-blue-700 hover:underline flex items-center gap-1"
-        title="Unduh hasil sebagai Excel"
+
+{# OOB swap: keep sort state in sync with the form's hidden inputs #}
+<input id="sort_by_input" name="sort_by" type="hidden" value="{{ sort_by }}" hx-swap-oob="outerHTML:#sort_by_input">
+<input id="sort_dir_input" name="sort_dir" type="hidden" value="{{ sort_dir }}" hx-swap-oob="outerHTML:#sort_dir_input">
+
+{# Macro for sortable column header #}
+{% macro sort_th(label, col, extra_class="") %}
+{% set active = sort_by == col %}
+{% set next_dir = 'desc' if (active and sort_dir == 'asc') else 'asc' %}
+<th class="px-3 py-2.5 text-left {{ extra_class }}">
+    <button
+        class="group inline-flex items-center gap-1 text-xs font-semibold text-gray-600 dark:text-gray-400
+               hover:text-gray-900 dark:hover:text-gray-100 whitespace-nowrap transition-colors"
+        hx-get="/search"
+        hx-include="#search-form"
+        hx-target="#results"
+        hx-vals='{"sort_by": "{{ col }}", "sort_dir": "{{ next_dir }}"}'
+        hx-indicator="#spinner"
     >
-        <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round"
-                d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/>
-        </svg>
-        Unduh Excel
-    </a>
+        {{ label }}
+        {% if active %}
+            {% if sort_dir == 'asc' %}
+            <svg class="h-3 w-3 text-blue-600 dark:text-blue-400 shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7"/>
+            </svg>
+            {% else %}
+            <svg class="h-3 w-3 text-blue-600 dark:text-blue-400 shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+            </svg>
+            {% endif %}
+        {% else %}
+            <svg class="h-3 w-3 text-gray-300 dark:text-gray-700 group-hover:text-gray-400 dark:group-hover:text-gray-500 shrink-0 transition-colors" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M8 9l4-4 4 4M16 15l-4 4-4-4"/>
+            </svg>
+        {% endif %}
+    </button>
+</th>
+{% endmacro %}
+
+<!-- Summary bar -->
+<div class="flex items-center justify-between mb-3 gap-4">
+    <p class="text-xs text-gray-500 dark:text-gray-500 shrink-0">
+        <span class="font-medium text-gray-700 dark:text-gray-300">{{ rows|length }}</span>
+        dari <span class="font-medium text-gray-700 dark:text-gray-300">{{ total }}</span> hasil
+        {% if q %} untuk <em class="text-gray-700 dark:text-gray-300 not-italic font-medium">"{{ q }}"</em>{% endif %}
+        <span class="text-gray-400 dark:text-gray-600 ml-1">{{ query_time_ms }} ms</span>
+    </p>
+    <div class="flex items-center gap-3 shrink-0">
+        <div class="flex items-center gap-2">
+            <button
+                hx-post="/enrich-tipe"
+                hx-vals='{"q": "{{ q }}", "tkdn_min": "{{ tkdn_min }}", "kbli": "{{ kbli or "" }}", "year": "{{ year or "" }}"}'
+                hx-target="#enrich-tipe-status"
+                hx-swap="innerHTML"
+                hx-indicator="#enrich-spinner"
+                class="inline-flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-500 hover:text-blue-700 dark:hover:text-blue-400
+                       border border-gray-300 dark:border-gray-700 hover:border-blue-400 dark:hover:border-blue-600
+                       rounded-md px-2.5 py-1 transition-colors bg-white dark:bg-gray-900"
+                title="Ambil data Tipe dari tkdn.kemenperin.go.id"
+            >
+                <svg class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+                Update Tipe
+            </button>
+            <svg id="enrich-spinner" class="htmx-indicator animate-spin h-3.5 w-3.5 text-blue-500" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+            </svg>
+            <span id="enrich-tipe-status" class="text-xs"></span>
+        </div>
+        <a href="/export.xlsx?q={{ q }}&tkdn_min={{ tkdn_min }}&validity_only={{ validity_only|lower }}&kbli={{ kbli or '' }}&year={{ year or '' }}"
+           class="inline-flex items-center gap-1 text-xs text-blue-700 dark:text-blue-400 hover:underline"
+           title="Unduh hasil sebagai Excel">
+            <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/>
+            </svg>
+            Unduh Excel
+        </a>
+    </div>
 </div>
 
-<!-- Results table -->
-<div class="overflow-x-auto rounded-lg border border-gray-200 shadow-sm">
-    <table class="min-w-full divide-y divide-gray-200 text-sm">
-        <thead class="bg-gray-50">
-            <tr>
-                <th class="px-4 py-3 text-left font-semibold text-gray-700 whitespace-nowrap">Perusahaan</th>
-                <th class="px-4 py-3 text-left font-semibold text-gray-700 whitespace-nowrap">Produk</th>
-                <th class="px-4 py-3 text-left font-semibold text-gray-700 whitespace-nowrap">Spesifikasi</th>
-                <th class="px-4 py-3 text-left font-semibold text-gray-700 whitespace-nowrap">Merek/Tipe</th>
-                <th class="px-4 py-3 text-right font-semibold text-gray-700 whitespace-nowrap">TKDN (%)</th>
-                <th class="px-4 py-3 text-left font-semibold text-gray-700 whitespace-nowrap">Masa Berlaku</th>
-                <th class="px-4 py-3 text-left font-semibold text-gray-700 whitespace-nowrap">Status</th>
-                <th class="px-4 py-3 text-center font-semibold text-gray-700 whitespace-nowrap">Detail</th>
+<!-- Results table — horizontally scrollable so columns breathe -->
+<div class="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-800 shadow-sm">
+    <table class="min-w-full text-xs">
+        <thead>
+            <tr class="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
+                {{ sort_th("Perusahaan", "perusahaan", "min-w-[160px]") }}
+                {{ sort_th("Jenis Produk", "produk", "min-w-[140px]") }}
+                <th class="px-3 py-2.5 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 whitespace-nowrap min-w-[200px]">Spesifikasi</th>
+                <th class="px-3 py-2.5 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 whitespace-nowrap min-w-[120px]">Tipe</th>
+                <th class="px-3 py-2.5 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 whitespace-nowrap min-w-[100px]">Merk</th>
+                {{ sort_th("Nilai TKDN", "tkdn", "min-w-[90px] text-right") }}
+                {{ sort_th("Masa Berlaku", "status", "min-w-[105px]") }}
+                <th class="px-3 py-2.5 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 whitespace-nowrap min-w-[90px]">Status</th>
+                <th class="px-3 py-2.5 text-center text-xs font-semibold text-gray-600 dark:text-gray-400 whitespace-nowrap w-14">Detail</th>
             </tr>
         </thead>
-        <tbody class="divide-y divide-gray-100 bg-white">
+        <tbody class="bg-white dark:bg-gray-900 divide-y divide-gray-100 dark:divide-gray-800">
             {% for cert, validity_label in rows %}
-            <tr class="hover:bg-blue-50 transition-colors">
-                <td class="px-4 py-3 max-w-xs">
-                    <div class="font-medium text-gray-900 truncate" title="{{ cert.nama_perusahaan }}">
+            <tr class="hover:bg-blue-50 dark:hover:bg-gray-800 transition-colors h-10">
+                <td class="px-3 py-0 align-middle min-w-[160px] max-w-[220px]">
+                    <div class="truncate font-medium text-gray-900 dark:text-gray-100" title="{{ cert.nama_perusahaan }}">
                         {{ cert.nama_perusahaan }}
                     </div>
-                    {% if cert.provinsi %}
-                    <div class="text-xs text-gray-400">{{ cert.provinsi }}</div>
-                    {% endif %}
                 </td>
-                <td class="px-4 py-3 max-w-xs">
-                    <div class="text-gray-900 truncate" title="{{ cert.nama_produk }}">
+                <td class="px-3 py-0 align-middle min-w-[140px] max-w-[180px]">
+                    <div class="truncate text-gray-700 dark:text-gray-300"
+                         title="{{ cert.nama_produk }}{% if cert.kelompok_barang %} ({{ cert.kelompok_barang }}){% endif %}">
                         {{ cert.nama_produk }}
                     </div>
-                    {% if cert.kelompok_barang %}
-                    <div class="text-xs text-gray-400 truncate">{{ cert.kelompok_barang }}</div>
-                    {% endif %}
                 </td>
-                <td class="px-4 py-3 max-w-sm">
-                    <div class="text-gray-700 line-clamp-2 text-xs" title="{{ cert.spesifikasi }}">
-                        {{ cert.spesifikasi }}
+                <td class="px-3 py-0 align-middle min-w-[200px] max-w-[300px]">
+                    <div class="truncate text-gray-600 dark:text-gray-400" title="{{ cert.spesifikasi }}">
+                        {{ cert.spesifikasi or '—' }}
                     </div>
                 </td>
-                <td class="px-4 py-3 whitespace-nowrap">
-                    {% if cert.merek %}
-                    <div class="text-gray-800">{{ cert.merek }}</div>
-                    {% endif %}
-                    {% if cert.tipe %}
-                    <div class="text-xs text-gray-500">{{ cert.tipe }}</div>
-                    {% endif %}
-                    {% if not cert.merek and not cert.tipe %}
-                    <span class="text-gray-300">—</span>
-                    {% endif %}
+                <td class="px-3 py-0 align-middle min-w-[120px] max-w-[160px]">
+                    <div class="truncate text-gray-600 dark:text-gray-400" title="{{ cert.tipe }}">
+                        {{ cert.tipe or '—' }}
+                    </div>
                 </td>
-                <td class="px-4 py-3 text-right whitespace-nowrap">
+                <td class="px-3 py-0 align-middle min-w-[100px] max-w-[130px]">
+                    <div class="truncate text-gray-600 dark:text-gray-400" title="{{ cert.merek }}">
+                        {{ cert.merek or '—' }}
+                    </div>
+                </td>
+                <td class="px-3 py-0 align-middle whitespace-nowrap text-right min-w-[90px]">
                     {% if cert.nilai_tkdn is not none %}
-                    <span class="font-semibold
-                        {% if cert.nilai_tkdn >= 40 %}text-green-700
-                        {% elif cert.nilai_tkdn >= 25 %}text-yellow-700
-                        {% else %}text-red-700{% endif %}">
+                    <span class="font-semibold tabular-nums
+                        {% if cert.nilai_tkdn >= 40 %}text-green-700 dark:text-green-400
+                        {% elif cert.nilai_tkdn >= 25 %}text-yellow-700 dark:text-yellow-400
+                        {% else %}text-red-700 dark:text-red-400{% endif %}">
                         {{ "%.2f"|format(cert.nilai_tkdn) }}%
                     </span>
-                    {% else %}
-                    <span class="text-gray-300">—</span>
-                    {% endif %}
+                    {% else %}<span class="text-gray-300 dark:text-gray-700">—</span>{% endif %}
                 </td>
-                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">
-                    {% if cert.masa_berlaku_akhir %}
-                    {{ cert.masa_berlaku_akhir.strftime('%d %b %Y') }}
-                    {% else %}
-                    <span class="text-gray-300">—</span>
-                    {% endif %}
+                <td class="px-3 py-0 align-middle whitespace-nowrap text-gray-600 dark:text-gray-400 min-w-[105px]">
+                    {% if cert.masa_berlaku_akhir %}{{ cert.masa_berlaku_akhir.strftime('%d %b %Y') }}
+                    {% else %}<span class="text-gray-300 dark:text-gray-700">—</span>{% endif %}
                 </td>
-                <td class="px-4 py-3 whitespace-nowrap">
+                <td class="px-3 py-0 align-middle whitespace-nowrap min-w-[90px]">
                     {% if validity_label == 'valid' %}
-                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
-                        Berlaku
-                    </span>
+                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300">Berlaku</span>
                     {% elif validity_label == 'expiring' %}
-                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
-                        Segera Habis
-                    </span>
+                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300">Habis</span>
                     {% elif validity_label == 'expired' %}
-                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
-                        Kadaluarsa
-                    </span>
+                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-300">Kadaluarsa</span>
                     {% else %}
-                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
-                        Tidak Diketahui
-                    </span>
+                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-500">—</span>
                     {% endif %}
                 </td>
-                <td class="px-4 py-3 text-center">
+                <td class="px-3 py-0 align-middle text-center w-14">
                     <a href="/cert/{{ cert.id }}"
-                       class="text-blue-600 hover:text-blue-800 hover:underline text-xs font-medium">
+                       class="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:underline font-medium">
                         Lihat
                     </a>
                 </td>
@@ -121,28 +165,22 @@
 
 <!-- Pagination -->
 {% if total_pages > 1 %}
-<div class="flex items-center justify-between mt-4">
-    <p class="text-xs text-gray-500">Halaman {{ page }} dari {{ total_pages }}</p>
-    <div class="flex gap-2">
+<div class="flex items-center justify-between mt-3">
+    <p class="text-xs text-gray-400 dark:text-gray-600">Halaman {{ page }} dari {{ total_pages }}</p>
+    <div class="flex gap-1.5">
         {% if page > 1 %}
-        <button
-            class="px-3 py-1 text-xs border border-gray-300 rounded hover:bg-gray-100 transition-colors"
+        <button class="px-3 py-1 text-xs border border-gray-300 dark:border-gray-700 rounded-md hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-gray-600 dark:text-gray-400 bg-white dark:bg-gray-900"
             hx-get="/search"
-            hx-vals='{"page": "{{ page - 1 }}", "q": "{{ q }}", "tkdn_min": "{{ tkdn_min }}", "validity_only": "{{ validity_only|lower }}", "kbli": "{{ kbli or '' }}", "year": "{{ year or '' }}"}'
-            hx-target="#results"
-            hx-indicator="#spinner"
-        >
+            hx-vals='{"page": "{{ page - 1 }}", "q": "{{ q }}", "tkdn_min": "{{ tkdn_min }}", "validity_only": "{{ validity_only|lower }}", "kbli": "{{ kbli or '' }}", "year": "{{ year or '' }}", "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}"}'
+            hx-target="#results" hx-indicator="#spinner">
             &laquo; Sebelumnya
         </button>
         {% endif %}
         {% if page < total_pages %}
-        <button
-            class="px-3 py-1 text-xs border border-gray-300 rounded hover:bg-gray-100 transition-colors"
+        <button class="px-3 py-1 text-xs border border-gray-300 dark:border-gray-700 rounded-md hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-gray-600 dark:text-gray-400 bg-white dark:bg-gray-900"
             hx-get="/search"
-            hx-vals='{"page": "{{ page + 1 }}", "q": "{{ q }}", "tkdn_min": "{{ tkdn_min }}", "validity_only": "{{ validity_only|lower }}", "kbli": "{{ kbli or '' }}", "year": "{{ year or '' }}"}'
-            hx-target="#results"
-            hx-indicator="#spinner"
-        >
+            hx-vals='{"page": "{{ page + 1 }}", "q": "{{ q }}", "tkdn_min": "{{ tkdn_min }}", "validity_only": "{{ validity_only|lower }}", "kbli": "{{ kbli or '' }}", "year": "{{ year or '' }}", "sort_by": "{{ sort_by }}", "sort_dir": "{{ sort_dir }}"}'
+            hx-target="#results" hx-indicator="#spinner">
             Berikutnya &raquo;
         </button>
         {% endif %}
@@ -151,12 +189,12 @@
 {% endif %}
 
 {% else %}
-<div class="text-center py-12 text-gray-400">
-    <svg class="mx-auto h-10 w-10 mb-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+<div class="text-center py-16 text-gray-400 dark:text-gray-600">
+    <svg class="mx-auto h-8 w-8 mb-3 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
             d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
     </svg>
-    <p class="text-sm font-medium">Tidak ada hasil ditemukan.</p>
-    <p class="text-xs mt-1">Coba ubah kata kunci atau kurangi filter.</p>
+    <p class="text-sm font-medium text-gray-500 dark:text-gray-500">Tidak ada hasil ditemukan.</p>
+    <p class="text-xs mt-1 text-gray-400 dark:text-gray-600">Coba ubah kata kunci atau kurangi filter.</p>
 </div>
 {% endif %}

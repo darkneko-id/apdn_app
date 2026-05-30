@@ -38,20 +38,36 @@ def init_db(db_path_or_conn: str | sqlite3.Connection) -> None:
 
 
 def _apply_migrations(conn: sqlite3.Connection) -> None:
-    """Execute migration SQL file using executescript for multi-statement support."""
-    migration_file = _MIGRATION_DIR / "001_initial.sql"
-    if not migration_file.exists():
-        alt = Path(__file__).parent.parent.parent / "migrations" / "001_initial.sql"
-        if alt.exists():
-            migration_file = alt
-        else:
-            logger.warning("Migration file not found at %s", migration_file)
-            return
+    """Apply all pending migrations in order."""
+    migrations_dir = _MIGRATION_DIR
+    if not migrations_dir.exists():
+        migrations_dir = Path(__file__).parent.parent.parent / "migrations"
 
-    sql = migration_file.read_text(encoding="utf-8")
-    # executescript handles multi-statement DDL including CREATE TRIGGER ... BEGIN...END
-    conn.executescript(sql)
-    logger.info("Database schema initialized")
+    applied = {
+        row[0]
+        for row in conn.execute(
+            "SELECT version FROM schema_version"
+        ).fetchall()
+    } if _table_exists(conn, "schema_version") else set()
+
+    for migration_file in sorted(migrations_dir.glob("*.sql")):
+        # Extract version number from filename prefix (e.g. "001_initial.sql" → 1)
+        try:
+            version = int(migration_file.name.split("_")[0])
+        except ValueError:
+            continue
+        if version in applied:
+            continue
+        sql = migration_file.read_text(encoding="utf-8")
+        conn.executescript(sql)
+        logger.info("Applied migration %s", migration_file.name)
+
+
+def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
+    ).fetchone()
+    return row is not None
 
 
 def get_db_path(data_dir: str = "data") -> str:
@@ -76,9 +92,8 @@ def upsert_certificate(conn: sqlite3.Connection, row: dict[str, Any]) -> str:
             (:nama_perusahaan, :nama_produk, :spesifikasi, :merek, :tipe, :nilai_tkdn,
              :kode_hs, :kbli, :kelompok_barang, :alamat, :provinsi, :masa_berlaku_akhir,
              :tahun_sumber, :ingested_at)
-        ON CONFLICT(nama_perusahaan, nama_produk, spesifikasi) DO UPDATE SET
+        ON CONFLICT(nama_perusahaan, nama_produk, spesifikasi, tipe) DO UPDATE SET
             merek = excluded.merek,
-            tipe = excluded.tipe,
             nilai_tkdn = excluded.nilai_tkdn,
             kode_hs = excluded.kode_hs,
             kbli = excluded.kbli,
@@ -173,9 +188,11 @@ def get_certificate_by_id(conn: sqlite3.Connection, cert_id: int) -> sqlite3.Row
 
 
 def get_kbli_list(conn: sqlite3.Connection) -> list[str]:
-    """Return distinct non-null KBLI codes."""
+    """Return distinct valid KBLI codes (exactly 5 digits)."""
     cursor = conn.execute(
-        "SELECT DISTINCT kbli FROM tkdn_certificate WHERE kbli IS NOT NULL ORDER BY kbli"
+        "SELECT DISTINCT kbli FROM tkdn_certificate "
+        "WHERE kbli IS NOT NULL AND kbli GLOB '[0-9][0-9][0-9][0-9][0-9]' "
+        "ORDER BY kbli"
     )
     return [row["kbli"] for row in cursor.fetchall()]
 

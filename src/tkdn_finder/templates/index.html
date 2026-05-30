@@ -2,41 +2,43 @@
 {% block title %}TKDN Finder — Pencarian Sertifikat TKDN{% endblock %}
 
 {% block content %}
-<div class="space-y-6">
-    <!-- Page header -->
+<div class="space-y-5">
     <div>
-        <h1 class="text-2xl font-bold text-gray-900">Pencarian Sertifikat TKDN</h1>
-        <p class="mt-1 text-sm text-gray-500">
+        <h1 class="text-lg font-semibold text-gray-900 dark:text-gray-100">Pencarian Sertifikat TKDN</h1>
+        <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-500">
             Cari produk berdasarkan nama, spesifikasi, merek, atau KBLI. Mendukung koreksi typo otomatis.
         </p>
     </div>
 
-    <!-- Search form -->
-    <form id="search-form" class="space-y-4">
-        <!-- Main search input -->
-        <div class="flex gap-3">
-            <div class="flex-1">
-                <label for="q" class="sr-only">Kata kunci pencarian</label>
-                <input
-                    type="text"
-                    id="q"
-                    name="q"
-                    placeholder="Cari nama produk, spesifikasi, merek, atau perusahaan..."
-                    class="w-full px-4 py-3 text-base border border-gray-300 rounded-lg shadow-sm
-                           focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    hx-get="/search"
-                    hx-trigger="keyup changed delay:{{ debounce_ms }}ms, search"
-                    hx-target="#results"
-                    hx-include="#search-form"
-                    hx-indicator="#spinner"
-                    autocomplete="off"
-                    autofocus
-                />
-            </div>
+    <form id="search-form" class="space-y-3">
+        <!-- Sort state — persisted by OOB swap from results.html -->
+        <input type="hidden" id="sort_by_input" name="sort_by" value="">
+        <input type="hidden" id="sort_dir_input" name="sort_dir" value="asc">
+
+        <div class="flex gap-2">
+            <label for="q" class="sr-only">Kata kunci pencarian</label>
+            <input
+                type="text"
+                id="q"
+                name="q"
+                placeholder="Cari nama produk, spesifikasi, merek, atau perusahaan..."
+                class="flex-1 px-3.5 py-2.5 text-sm bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg shadow-sm
+                       text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-600
+                       focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-600 focus:border-blue-500 dark:focus:border-blue-600
+                       transition-colors"
+                hx-get="/search"
+                hx-trigger="keyup changed delay:250ms, search"
+                hx-target="#results"
+                hx-include="#search-form"
+                hx-indicator="#spinner"
+                autocomplete="off"
+                autofocus
+            />
             <button
                 type="submit"
-                class="px-6 py-3 bg-blue-700 text-white font-medium rounded-lg hover:bg-blue-800
-                       focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                class="px-5 py-2.5 bg-blue-700 dark:bg-blue-800 text-white text-sm font-medium rounded-lg
+                       hover:bg-blue-800 dark:hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500
+                       transition-colors whitespace-nowrap"
                 hx-get="/search"
                 hx-target="#results"
                 hx-include="#search-form"
@@ -46,99 +48,57 @@
             </button>
         </div>
 
-        <!-- Filters row -->
-        <div class="flex flex-wrap gap-4 items-end">
-            <!-- TKDN minimum -->
-            <div class="flex flex-col gap-1 min-w-[140px]">
-                <label for="tkdn_min" class="text-xs font-medium text-gray-600">TKDN minimum (%)</label>
-                <input
-                    type="number"
-                    id="tkdn_min"
-                    name="tkdn_min"
-                    value="0"
-                    min="0"
-                    max="100"
-                    step="1"
-                    class="px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    hx-get="/search"
-                    hx-trigger="change"
-                    hx-target="#results"
-                    hx-include="#search-form"
-                    hx-indicator="#spinner"
-                />
+        <div class="flex flex-wrap gap-3 items-end">
+            <div class="flex flex-col gap-1">
+                <label for="tkdn_min" class="h-5 flex items-center text-xs font-medium text-gray-500 dark:text-gray-500">TKDN min (%)</label>
+                <input type="number" id="tkdn_min" name="tkdn_min" value="0" min="0" max="100" step="1"
+                    class="h-9 w-24 px-3 text-sm bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700
+                           text-gray-900 dark:text-gray-100 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors"
+                    hx-get="/search" hx-trigger="change" hx-target="#results" hx-include="#search-form" hx-indicator="#spinner"/>
             </div>
-
-            <!-- KBLI filter -->
-            <div class="flex flex-col gap-1 min-w-[180px]">
-                <label for="kbli" class="text-xs font-medium text-gray-600">KBLI</label>
-                <select
-                    id="kbli"
-                    name="kbli"
-                    class="px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    hx-get="/search"
-                    hx-trigger="change"
-                    hx-target="#results"
-                    hx-include="#search-form"
-                    hx-indicator="#spinner"
-                >
+            <div class="flex flex-col gap-1">
+                <label for="kbli" class="h-5 flex items-center text-xs font-medium text-gray-500 dark:text-gray-500">KBLI</label>
+                <select id="kbli" name="kbli"
+                    class="h-9 w-44 px-3 text-sm bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700
+                           text-gray-900 dark:text-gray-100 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors"
+                    hx-get="/search" hx-trigger="change" hx-target="#results" hx-include="#search-form" hx-indicator="#spinner">
                     <option value="">Semua KBLI</option>
-                    {% for k in kbli_list %}
-                    <option value="{{ k }}">{{ k }}</option>
-                    {% endfor %}
+                    {% for k in kbli_list %}<option value="{{ k }}">{{ k }}</option>{% endfor %}
                 </select>
             </div>
-
-            <!-- Year filter -->
-            <div class="flex flex-col gap-1 min-w-[140px]">
-                <label for="year" class="text-xs font-medium text-gray-600">Tahun</label>
-                <select
-                    id="year"
-                    name="year"
-                    class="px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    hx-get="/search"
-                    hx-trigger="change"
-                    hx-target="#results"
-                    hx-include="#search-form"
-                    hx-indicator="#spinner"
-                >
+            <div class="flex flex-col gap-1">
+                <label for="year" class="h-5 flex items-center text-xs font-medium text-gray-500 dark:text-gray-500">Tahun</label>
+                <select id="year" name="year"
+                    class="h-9 w-32 px-3 text-sm bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700
+                           text-gray-900 dark:text-gray-100 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors"
+                    hx-get="/search" hx-trigger="change" hx-target="#results" hx-include="#search-form" hx-indicator="#spinner">
                     <option value="">Semua Tahun</option>
-                    {% for y in year_list %}
-                    <option value="{{ y }}">{{ y }}</option>
-                    {% endfor %}
+                    {% for y in year_list %}<option value="{{ y }}">{{ y }}</option>{% endfor %}
                 </select>
             </div>
-
-            <!-- Validity only checkbox -->
-            <div class="flex items-center gap-2 pb-2">
-                <input
-                    type="checkbox"
-                    id="validity_only"
-                    name="validity_only"
-                    value="true"
-                    class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                    hx-get="/search"
-                    hx-trigger="change"
-                    hx-target="#results"
-                    hx-include="#search-form"
-                    hx-indicator="#spinner"
-                />
-                <label for="validity_only" class="text-sm text-gray-700">Hanya berlaku</label>
+            <div class="flex flex-col gap-1">
+                <span class="h-5"></span>
+                <div class="h-9 flex items-center gap-2">
+                    <input type="checkbox" id="validity_only" name="validity_only" value="true"
+                        class="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 bg-white dark:bg-gray-900"
+                        hx-get="/search" hx-trigger="change" hx-target="#results" hx-include="#search-form" hx-indicator="#spinner"/>
+                    <label for="validity_only" class="text-sm text-gray-600 dark:text-gray-400 select-none cursor-pointer">Hanya berlaku</label>
+                </div>
             </div>
-
-            <!-- Spinner -->
-            <div id="spinner" class="htmx-indicator flex items-center pb-2">
-                <svg class="animate-spin h-5 w-5 text-blue-600" fill="none" viewBox="0 0 24 24">
-                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-                    <path class="opacity-75" fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-                </svg>
+            <div class="flex flex-col gap-1">
+                <span class="h-5"></span>
+                <div id="spinner" class="htmx-indicator h-9 items-center">
+                    <svg class="animate-spin h-4 w-4 text-blue-500 dark:text-blue-400" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                    </svg>
+                </div>
             </div>
         </div>
     </form>
 
-    <!-- Results area (populated by HTMX) -->
     <div id="results">
-        <p class="text-sm text-gray-400 italic">Ketik kata kunci untuk mulai mencari...</p>
+        <p class="text-xs text-gray-400 dark:text-gray-600 italic">Ketik kata kunci untuk mulai mencari...</p>
     </div>
 </div>
 {% endblock %}

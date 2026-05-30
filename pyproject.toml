@@ -24,14 +24,10 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=7.4",
-    "pytest-asyncio>=0.21",
-    "respx>=0.20",
     "ruff>=0.1",
     "black>=23",
     "mypy>=1.7",
     "pyinstaller>=6.0",
-    "httpx>=0.25",
 ]
 
 [project.scripts]
@@ -42,10 +38,6 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 tkdn_finder = ["templates/**/*", "static/**/*"]
-
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
-testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 100

@@ -29,6 +29,7 @@ class P3dnSettings(BaseSettings):
 class ScheduleSettings(BaseSettings):
     """APScheduler configuration."""
 
+    enabled: bool = True
     cron: str = "0 2 * * *"
 
     model_config = SettingsConfigDict(env_prefix="TKDN_SCHEDULE__")
