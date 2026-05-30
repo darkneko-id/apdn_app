@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}Bantuan — TKDN Finder{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto space-y-8">
+
+  <div>
+    <h1 class="text-2xl font-bold text-gray-900 dark:text-gray-100">Bantuan & Cara Pakai</h1>
+    <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">
+      Panduan penggunaan TKDN Finder untuk kegiatan pra-kualifikasi dan penyusunan BAHP.
+    </p>
+  </div>
+
+  <!-- Apa itu TKDN Finder -->
+  <section class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6 shadow-sm space-y-3">
+    <h2 class="text-base font-semibold text-gray-900 dark:text-gray-100">Apa itu TKDN Finder?</h2>
+    <p class="text-sm text-gray-600 dark:text-gray-400">
+      TKDN Finder adalah alat pencarian sertifikat <strong>Tingkat Komponen Dalam Negeri (TKDN)</strong>
+      yang diterbitkan oleh Kemenperin melalui portal P3DN. Data diunduh otomatis dari
+      <a href="https://p3dn.kemenperin.go.id" class="text-blue-600 dark:text-blue-400 hover:underline" target="_blank">p3dn.kemenperin.go.id</a>
+      dan diindeks untuk pencarian cepat dengan toleransi typo.
+    </p>
+    <p class="text-sm text-gray-600 dark:text-gray-400">
+      Dirancang untuk kebutuhan pengadaan di lingkungan KKKS (PTK-007 / Pedoman A7-001), khususnya
+      pra-kualifikasi vendor dan penyusunan Berita Acara Hasil Pelelangan (BAHP).
+    </p>
+  </section>
+
+  <!-- Pencarian -->
+  <section class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6 shadow-sm space-y-4">
+    <h2 class="text-base font-semibold text-gray-900 dark:text-gray-100">Cara Pencarian</h2>
+    <div class="space-y-3 text-sm text-gray-600 dark:text-gray-400">
+      <div class="flex gap-3">
+        <span class="shrink-0 w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-xs font-bold flex items-center justify-center">1</span>
+        <p>Ketik nama produk, perusahaan, spesifikasi, atau KBLI di kolom pencarian. Pencarian mendukung <strong>toleransi typo</strong> dan <strong>sinonim</strong> — misalnya "pompa" akan menemukan "pump", "centrifugal pump" juga menemukan "pompa sentrifugal".</p>
+      </div>
+      <div class="flex gap-3">
+        <span class="shrink-0 w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-xs font-bold flex items-center justify-center">2</span>
+        <p>Gunakan filter <strong>TKDN Min (%)</strong> untuk menyaring hanya produk dengan nilai TKDN di atas ambang tertentu. Untuk pengadaan KKKS, threshold umum adalah 25% atau 40%.</p>
+      </div>
+      <div class="flex gap-3">
+        <span class="shrink-0 w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-xs font-bold flex items-center justify-center">3</span>
+        <p>Centang <strong>"Hanya yang masih berlaku"</strong> untuk menyembunyikan sertifikat yang sudah kadaluarsa.</p>
+      </div>
+      <div class="flex gap-3">
+        <span class="shrink-0 w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-xs font-bold flex items-center justify-center">4</span>
+        <p>Filter <strong>KBLI</strong> dan <strong>Tahun</strong> tersedia untuk mempersempit hasil berdasarkan klasifikasi industri atau tahun penerbitan sertifikat.</p>
+      </div>
+      <div class="flex gap-3">
+        <span class="shrink-0 w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-xs font-bold flex items-center justify-center">5</span>
+        <p>Klik header kolom <strong>Perusahaan</strong>, <strong>Nilai TKDN</strong>, atau <strong>Masa Berlaku</strong> untuk mengurutkan hasil.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Membaca Hasil -->
+  <section class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6 shadow-sm space-y-4">
+    <h2 class="text-base font-semibold text-gray-900 dark:text-gray-100">Membaca Hasil Pencarian</h2>
+    <div class="space-y-2 text-sm text-gray-600 dark:text-gray-400">
+      <div class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-2">
+        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300 whitespace-nowrap">Berlaku</span>
+        <span>Sertifikat masih aktif, masa berlaku lebih dari 60 hari ke depan.</span>
+        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 dark:bg-yellow-900/40 text-yellow-800 dark:text-yellow-300 whitespace-nowrap">Segera Berakhir</span>
+        <span>Sertifikat akan berakhir dalam 60 hari ke depan. Perlu konfirmasi ke vendor.</span>
+        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-300 whitespace-nowrap">Kadaluarsa</span>
+        <span>Sertifikat sudah tidak berlaku. Tidak dapat digunakan untuk dokumen pengadaan.</span>
+        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 whitespace-nowrap">Tidak Diketahui</span>
+        <span>Tanggal kadaluarsa tidak tersedia di sumber data.</span>
+      </div>
+    </div>
+    <p class="text-sm text-gray-600 dark:text-gray-400">
+      Klik baris atau ikon <strong>detail</strong> untuk melihat informasi lengkap sertifikat termasuk alamat, KBLI, dan Kode HS.
+    </p>
+  </section>
+
+  <!-- Fitur Tambahan -->
+  <section class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6 shadow-sm space-y-4">
+    <h2 class="text-base font-semibold text-gray-900 dark:text-gray-100">Fitur Tambahan</h2>
+    <div class="space-y-3 text-sm text-gray-600 dark:text-gray-400">
+      <div>
+        <p class="font-medium text-gray-800 dark:text-gray-200 mb-1">Update Tipe</p>
+        <p>Data Tipe produk (contoh: "Tipe C", "Cable Ladder SLHD" untuk cable tray) tidak tersedia di ekspor bulk P3DN. Tombol <strong>Update Tipe</strong> di hasil pencarian akan mengambil data Tipe dari portal <a href="https://tkdn.kemenperin.go.id" class="text-blue-600 dark:text-blue-400 hover:underline" target="_blank">tkdn.kemenperin.go.id</a> untuk semua perusahaan di halaman hasil tersebut.</p>
+      </div>
+      <div>
+        <p class="font-medium text-gray-800 dark:text-gray-200 mb-1">Unduh Excel</p>
+        <p>Klik <strong>Unduh Excel</strong> di hasil pencarian untuk mengunduh seluruh hasil (maks. 500 baris) dalam format .xlsx, siap digunakan sebagai lampiran BAHP atau referensi pengadaan.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Admin -->
+  <section class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6 shadow-sm space-y-4">
+    <h2 class="text-base font-semibold text-gray-900 dark:text-gray-100">Halaman Admin</h2>
+    <div class="space-y-3 text-sm text-gray-600 dark:text-gray-400">
+      <div>
+        <p class="font-medium text-gray-800 dark:text-gray-200 mb-1">Refresh / Download Data</p>
+        <p>Klik tombol ini untuk mengunduh ulang seluruh data TKDN dari P3DN. Proses ini memakan waktu beberapa menit. Progress ditampilkan secara real-time. Data juga otomatis diunduh saat aplikasi pertama kali dijalankan dengan database kosong.</p>
+      </div>
+      <div>
+        <p class="font-medium text-gray-800 dark:text-gray-200 mb-1">Manajemen Sinonim</p>
+        <p>Tambah atau hapus sinonim pencarian. Sinonim memungkinkan pencarian "pump" menemukan "pompa sentrifugal", atau "valve" menemukan "katup". Perubahan sinonim berlaku langsung tanpa restart.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Tentang Data -->
+  <section class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6 shadow-sm space-y-3">
+    <h2 class="text-base font-semibold text-gray-900 dark:text-gray-100">Tentang Data</h2>
+    <ul class="text-sm text-gray-600 dark:text-gray-400 space-y-1.5 list-disc list-inside">
+      <li>Sumber data: <a href="https://p3dn.kemenperin.go.id/rekap.php" class="text-blue-600 dark:text-blue-400 hover:underline" target="_blank">Kemenperin P3DN</a> (ekspor HTML/XLS per tahun)</li>
+      <li>Data mencakup sertifikat TKDN yang <em>masih berlaku</em> pada tanggal ekspor terakhir</li>
+      <li>Kolom Tipe pada data P3DN kosong — diisi dari portal tkdn.kemenperin.go.id via fitur Update Tipe</li>
+      <li>Nilai TKDN yang tampil adalah nilai sertifikat terdaftar, bukan hasil verifikasi ulang</li>
+      <li>Selalu konfirmasi ke vendor untuk sertifikat yang akan digunakan dalam dokumen resmi</li>
+    </ul>
+  </section>
+
+</div>
+{% endblock %}

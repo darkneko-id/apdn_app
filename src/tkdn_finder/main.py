@@ -13,7 +13,7 @@ from fastapi.templating import Jinja2Templates
 
 from .config import get_settings
 from .db import get_connection, init_db
-from .routes import admin, detail, export, health, search
+from .routes import admin, bantuan, detail, export, health, search
 from .scheduler import create_scheduler
 from .synonyms import seed_default_synonyms
 
@@ -77,6 +77,7 @@ def create_app() -> FastAPI:
     app.include_router(export.router)
     app.include_router(admin.router, prefix="/admin")
     app.include_router(health.router)
+    app.include_router(bantuan.router)
 
     # --- Startup / shutdown lifecycle ---
     @app.on_event("startup")
