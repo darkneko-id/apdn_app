@@ -1,6 +1,6 @@
-# build.spec — PyInstaller configuration for TKDN Finder Windows .exe
+# build.spec — PyInstaller configuration for TKDN Finder portable build
 # Usage: pyinstaller build.spec
-# Output: dist/tkdn-finder.exe
+# Output: dist/tkdn-finder (Mac/Linux) or dist/tkdn-finder.exe (Windows)
 
 block_cipher = None
 
@@ -10,7 +10,6 @@ a = Analysis(
     binaries=[],
     datas=[
         ('src/tkdn_finder/templates', 'tkdn_finder/templates'),
-        ('src/tkdn_finder/static', 'tkdn_finder/static'),
         ('migrations', 'migrations'),
     ],
     hiddenimports=[
@@ -66,11 +65,14 @@ a = Analysis(
         'tkdn_finder.search',
         'tkdn_finder.synonyms',
         'tkdn_finder.scheduler',
+        'tkdn_finder.refresh_state',
+        'tkdn_finder.tipe_enricher',
         'tkdn_finder.routes.search',
         'tkdn_finder.routes.detail',
         'tkdn_finder.routes.admin',
         'tkdn_finder.routes.export',
         'tkdn_finder.routes.health',
+        'tkdn_finder.routes.bantuan',
     ],
     hookspath=[],
     hooksconfig={},
@@ -83,6 +85,7 @@ a = Analysis(
         'scipy',
         'PIL',
         'Pillow',
+        'pytest',
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
@@ -106,7 +109,7 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=False,
+    console=True,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

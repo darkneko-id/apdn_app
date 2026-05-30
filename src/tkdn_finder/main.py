@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import logging
 import os
+import webbrowser
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -101,6 +102,11 @@ def create_app() -> FastAPI:
         scheduler.start()
         app.state.scheduler = scheduler
         logger.info("Application started. DB: %s", db_path)
+
+        # Auto-open browser when running as portable executable
+        import sys
+        if getattr(sys, "frozen", False):
+            webbrowser.open(f"http://{settings.host}:{settings.port}")
 
         # Auto-download on first run (empty DB)
         if is_empty:
