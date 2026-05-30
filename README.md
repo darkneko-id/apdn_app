@@ -48,19 +48,6 @@ Buka browser di **http://localhost:8000**
 
 Saat pertama dijalankan dengan database kosong, aplikasi akan **otomatis mengunduh data TKDN** dari P3DN (sekitar 2–5 menit tergantung koneksi). Progress dapat dipantau di halaman Admin.
 
-### Opsi B — Portable Executable
-
-Download file executable dari halaman [Releases](https://github.com/darkneko-id/apdn_app/releases) dan jalankan langsung — tidak perlu install Python.
-
-- **Windows:** `tkdn-finder.exe`
-- **Mac/Linux:** `tkdn-finder`
-
-Browser akan terbuka otomatis saat aplikasi dijalankan.
-
-Data tersimpan di:
-- **Windows:** `%APPDATA%\TKDN-Finder\tkdn.db`
-- **Mac/Linux:** `data/tkdn.db` (direktori yang sama dengan executable)
-
 ---
 
 ## Konfigurasi
