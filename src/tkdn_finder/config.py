@@ -19,9 +19,9 @@ class P3dnSettings(BaseSettings):
     download_timeout_seconds: int = 120
     retry_count: int = 3
     retry_backoff_seconds: int = 5
-    # Set False only if P3DN serves an untrusted/self-signed cert in your environment.
-    # Never disable in production without understanding the MITM risk.
-    verify_ssl: bool = True
+    # P3DN uses a cert that fails verification on some corporate proxies (SSL inspection).
+    # Defaulting to False; override with TKDN_P3DN__VERIFY_SSL=true if your network is clean.
+    verify_ssl: bool = False
 
     model_config = SettingsConfigDict(env_prefix="TKDN_P3DN__")
 
