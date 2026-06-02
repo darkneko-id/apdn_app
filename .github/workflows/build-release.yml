@@ -87,7 +87,6 @@ jobs:
           Copy-Item -Recurse src portable\src
           Copy-Item -Recurse migrations portable\migrations
           Copy-Item config.example.yaml portable\
-          'TKDN_P3DN__VERIFY_SSL=false' | Out-File -FilePath portable\.env -Encoding ascii
 
       - name: Create launch script
         shell: pwsh
