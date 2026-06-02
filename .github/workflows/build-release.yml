@@ -1,0 +1,56 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    name: Build Windows .exe
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Build exe with PyInstaller
+        run: uv run pyinstaller build.spec
+
+      - name: Zip the exe
+        run: Compress-Archive -Path dist\tkdn-finder.exe, run.bat, config.example.yaml -DestinationPath dist\tkdn-finder-windows.zip
+        shell: pwsh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tkdn-finder-windows
+          path: dist/tkdn-finder-windows.zip
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/tkdn-finder-windows.zip
+          generate_release_notes: true
+          body: |
+            ## Cara Pakai (Windows)
+
+            1. Download dan ekstrak `tkdn-finder-windows.zip`
+            2. (Opsional) Salin `config.example.yaml` → `config.yaml` dan sesuaikan
+            3. Jalankan `tkdn-finder.exe` — terminal akan terbuka
+            4. Buka browser di **http://localhost:8000**
+
+            Data TKDN akan otomatis diunduh saat pertama dijalankan (~2–5 menit).
+
+            > **Catatan jaringan korporat:** Jika ada SSL inspection, tambahkan `p3dn:\n  verify_ssl: false` di `config.yaml`.
