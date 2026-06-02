@@ -37,20 +37,112 @@ jobs:
           name: tkdn-finder-windows
           path: dist/tkdn-finder-windows.zip
 
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
+  build-portable:
+    name: Build Portable Python Package
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Python 3.11 embeddable
+        shell: pwsh
+        run: |
+          Invoke-WebRequest https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip -OutFile python-embed.zip
+          Expand-Archive python-embed.zip -DestinationPath portable\python
+
+      - name: Enable pip in embeddable Python
+        shell: pwsh
+        run: |
+          (Get-Content portable\python\python311._pth) -replace '#import site', 'import site' | Set-Content portable\python\python311._pth
+          Invoke-WebRequest https://bootstrap.pypa.io/get-pip.py -OutFile get-pip.py
+          portable\python\python.exe get-pip.py --no-warn-script-location
+
+      - name: Install app dependencies
+        shell: pwsh
+        run: |
+          portable\python\python.exe -m pip install `
+            "fastapi>=0.104" `
+            "uvicorn[standard]>=0.24" `
+            "beautifulsoup4>=4.12" `
+            "httpx>=0.25" `
+            "apscheduler>=3.10" `
+            "rapidfuzz>=3.5" `
+            "pydantic-settings>=2.0" `
+            "jinja2>=3.1" `
+            "python-multipart>=0.0.6" `
+            "openpyxl>=3.1" `
+            "python-dateutil>=2.8" `
+            "lxml>=4.9" `
+            "aiosqlite>=0.19" `
+            --no-warn-script-location
+
+      - name: Copy app files
+        shell: pwsh
+        run: |
+          Copy-Item -Recurse src portable\src
+          Copy-Item -Recurse migrations portable\migrations
+          Copy-Item config.example.yaml portable\
+
+      - name: Create launch script
+        shell: pwsh
+        run: |
+          $bat = @'
+          @echo off
+          echo Starting TKDN Finder...
+          echo.
+          echo Buka browser di http://localhost:8000
+          echo Tekan Ctrl+C untuk berhenti.
+          echo.
+          set PYTHONPATH=%~dp0src
+          "%~dp0python\python.exe" -m uvicorn tkdn_finder.main:app --host 127.0.0.1 --port 8000
+          pause
+          '@
+          $bat | Out-File -FilePath portable\tkdn-finder.bat -Encoding ascii
+
+      - name: Zip portable package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Compress-Archive -Path portable\* -DestinationPath dist\tkdn-finder-portable.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tkdn-finder-portable
+          path: dist/tkdn-finder-portable.zip
+
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [build-windows, build-portable]
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/tkdn-finder-windows.zip
+          files: |
+            dist/tkdn-finder-windows/tkdn-finder-windows.zip
+            dist/tkdn-finder-portable/tkdn-finder-portable.zip
           generate_release_notes: true
           body: |
-            ## Cara Pakai (Windows)
+            ## Download
 
-            1. Download dan ekstrak `tkdn-finder-windows.zip`
-            2. (Opsional) Salin `config.example.yaml` → `config.yaml` dan sesuaikan
-            3. Jalankan `tkdn-finder.exe` — terminal akan terbuka
+            | File | Keterangan |
+            |---|---|
+            | `tkdn-finder-portable.zip` | **Rekomendasi** — Python sudah termasuk, tidak perlu install apapun |
+            | `tkdn-finder-windows.zip` | Single `.exe` — lebih kecil, tapi butuh izin eksekusi |
+
+            ## Cara Pakai (Portable)
+
+            1. Download `tkdn-finder-portable.zip`
+            2. Ekstrak ke folder mana saja (misal `C:\App\tkdn-finder`)
+            3. Dobel klik **`tkdn-finder.bat`**
             4. Buka browser di **http://localhost:8000**
 
             Data TKDN akan otomatis diunduh saat pertama dijalankan (~2–5 menit).
 
-            > **Catatan jaringan korporat:** Jika ada SSL inspection, tambahkan `p3dn:\n  verify_ssl: false` di `config.yaml`.
+            > **Catatan jaringan korporat:** Jika ada SSL inspection, salin `config.example.yaml` → `config.yaml` dan tambahkan `p3dn:\n  verify_ssl: false`
