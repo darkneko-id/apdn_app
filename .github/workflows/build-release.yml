@@ -6,6 +6,9 @@ on:
       - 'v*'
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build-windows:
     name: Build Windows .exe
@@ -49,10 +52,13 @@ jobs:
           Invoke-WebRequest https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip -OutFile python-embed.zip
           Expand-Archive python-embed.zip -DestinationPath portable\python
 
-      - name: Enable pip in embeddable Python
+      - name: Enable pip and fix sys.path in embeddable Python
         shell: pwsh
         run: |
-          (Get-Content portable\python\python311._pth) -replace '#import site', 'import site' | Set-Content portable\python\python311._pth
+          $pth = Get-Content portable\python\python311._pth
+          $pth = $pth -replace '#import site', 'import site'
+          $pth += '..\src'
+          $pth | Set-Content portable\python\python311._pth
           Invoke-WebRequest https://bootstrap.pypa.io/get-pip.py -OutFile get-pip.py
           portable\python\python.exe get-pip.py --no-warn-script-location
 
@@ -92,7 +98,6 @@ jobs:
           echo Buka browser di http://localhost:8000
           echo Tekan Ctrl+C untuk berhenti.
           echo.
-          set PYTHONPATH=%~dp0src
           "%~dp0python\python.exe" -m uvicorn tkdn_finder.main:app --host 127.0.0.1 --port 8000
           pause
           '@
