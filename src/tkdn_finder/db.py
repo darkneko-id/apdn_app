@@ -131,15 +131,22 @@ def save_download_run(
     finished_at: datetime,
     row_count: int | None = None,
     error_message: str | None = None,
+    inserted_count: int | None = None,
+    updated_count: int | None = None,
+    skipped_count: int | None = None,
 ) -> None:
     """Persist a download run record."""
     conn.execute(
         """
         INSERT INTO download_run
-            (year_label, source_url, status, started_at, finished_at, row_count, error_message)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+            (year_label, source_url, status, started_at, finished_at,
+             row_count, error_message, inserted_count, updated_count, skipped_count)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (year, url, status, started_at.isoformat(), finished_at.isoformat(), row_count, error_message),
+        (
+            year, url, status, started_at.isoformat(), finished_at.isoformat(),
+            row_count, error_message, inserted_count, updated_count, skipped_count,
+        ),
     )
     conn.commit()
 
