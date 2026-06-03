@@ -123,6 +123,8 @@ async def refresh_all_years(settings: Settings, db_path: str) -> None:
             conn.close()
 
     rs.finish()
+    from .db import invalidate_filter_cache
+    invalidate_filter_cache()
 
 
 def create_scheduler(settings: Settings, db_path: str) -> AsyncIOScheduler:

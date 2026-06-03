@@ -15,6 +15,17 @@ logger = logging.getLogger(__name__)
 
 _MIGRATION_DIR = Path(__file__).parent.parent.parent / "migrations"
 
+# --- Filter-list cache (kbli + year) invalidated after each bulk refresh ---
+_kbli_cache: list[str] = []
+_year_cache: list[int] = []
+_filter_cache_dirty: bool = True
+
+
+def invalidate_filter_cache() -> None:
+    """Call after refresh_all_years completes to force reload on next request."""
+    global _filter_cache_dirty
+    _filter_cache_dirty = True
+
 
 def get_connection(db_path: str) -> sqlite3.Connection:
     """Open a SQLite connection with WAL mode and row_factory."""
@@ -187,8 +198,7 @@ def get_certificate_by_id(conn: sqlite3.Connection, cert_id: int) -> sqlite3.Row
     return cursor.fetchone()
 
 
-def get_kbli_list(conn: sqlite3.Connection) -> list[str]:
-    """Return distinct valid KBLI codes (exactly 5 digits)."""
+def _fetch_kbli_list(conn: sqlite3.Connection) -> list[str]:
     cursor = conn.execute(
         "SELECT DISTINCT kbli FROM tkdn_certificate "
         "WHERE kbli IS NOT NULL AND kbli GLOB '[0-9][0-9][0-9][0-9][0-9]' "
@@ -197,12 +207,31 @@ def get_kbli_list(conn: sqlite3.Connection) -> list[str]:
     return [row["kbli"] for row in cursor.fetchall()]
 
 
-def get_year_list(conn: sqlite3.Connection) -> list[int]:
-    """Return distinct non-null source years."""
+def _fetch_year_list(conn: sqlite3.Connection) -> list[int]:
     cursor = conn.execute(
         "SELECT DISTINCT tahun_sumber FROM tkdn_certificate WHERE tahun_sumber IS NOT NULL ORDER BY tahun_sumber"
     )
     return [row["tahun_sumber"] for row in cursor.fetchall()]
+
+
+def get_kbli_list(conn: sqlite3.Connection) -> list[str]:
+    """Return distinct valid KBLI codes. Cached in memory until invalidated."""
+    global _kbli_cache, _year_cache, _filter_cache_dirty
+    if _filter_cache_dirty:
+        _kbli_cache = _fetch_kbli_list(conn)
+        _year_cache = _fetch_year_list(conn)
+        _filter_cache_dirty = False
+    return _kbli_cache
+
+
+def get_year_list(conn: sqlite3.Connection) -> list[int]:
+    """Return distinct non-null source years. Cached in memory until invalidated."""
+    global _kbli_cache, _year_cache, _filter_cache_dirty
+    if _filter_cache_dirty:
+        _kbli_cache = _fetch_kbli_list(conn)
+        _year_cache = _fetch_year_list(conn)
+        _filter_cache_dirty = False
+    return _year_cache
 
 
 def get_synonyms_all(conn: sqlite3.Connection) -> list[sqlite3.Row]:

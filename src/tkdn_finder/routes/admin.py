@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import sqlite3
 
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
@@ -27,6 +28,22 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _admin_data_sync(db_path: str) -> tuple[dict[str, object], list[sqlite3.Row], list[sqlite3.Row]]:
+    conn = get_connection(db_path)
+    try:
+        return get_stats(conn), get_download_runs(conn, limit=10), get_synonyms_all(conn)
+    finally:
+        conn.close()
+
+
+def _get_stats_sync(db_path: str) -> dict[str, object]:
+    conn = get_connection(db_path)
+    try:
+        return get_stats(conn)
+    finally:
+        conn.close()
+
+
 @router.get("", response_class=HTMLResponse)
 @router.get("/", response_class=HTMLResponse)
 async def admin_page(request: Request) -> HTMLResponse:
@@ -34,14 +51,10 @@ async def admin_page(request: Request) -> HTMLResponse:
     templates: Jinja2Templates = request.app.state.templates
     settings = get_settings()
 
-    conn = get_connection(settings.get_db_path())
-    try:
-        stats = get_stats(conn)
-        runs_raw = get_download_runs(conn, limit=10)
-        runs = [DownloadRunRow.from_row(r) for r in runs_raw]
-        synonyms = get_synonyms_all(conn)
-    finally:
-        conn.close()
+    stats, runs_raw, synonyms = await asyncio.to_thread(
+        _admin_data_sync, settings.get_db_path()
+    )
+    runs = [DownloadRunRow.from_row(r) for r in runs_raw]
 
     return templates.TemplateResponse(
         request,
@@ -144,11 +157,7 @@ async def refresh_progress() -> HTMLResponse:
 async def admin_status() -> StatsResponse:
     """Return current DB stats as JSON."""
     settings = get_settings()
-    conn = get_connection(settings.get_db_path())
-    try:
-        stats = get_stats(conn)
-    finally:
-        conn.close()
+    stats = await asyncio.to_thread(_get_stats_sync, settings.get_db_path())
     return StatsResponse(**stats)
 
 
