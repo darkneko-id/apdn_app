@@ -28,7 +28,14 @@ dev = [
     "black>=23",
     "mypy>=1.7",
     "pyinstaller>=6.0",
+    "pytest>=7.4",
+    "pytest-asyncio>=0.23",
+    "pytest-mock>=3.12",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
 
 [project.scripts]
 tkdn-finder = "tkdn_finder.main:main"
