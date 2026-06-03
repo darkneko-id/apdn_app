@@ -15,9 +15,10 @@ logger = logging.getLogger(__name__)
 
 _MIGRATION_DIR = Path(__file__).parent.parent.parent / "migrations"
 
-# --- Filter-list cache (kbli + year) invalidated after each bulk refresh ---
+# --- Filter-list cache (kbli + year + last refresh) invalidated after each bulk refresh ---
 _kbli_cache: list[str] = []
 _year_cache: list[int] = []
+_last_refresh_cache: str | None = None
 _filter_cache_dirty: bool = True
 
 
@@ -25,6 +26,14 @@ def invalidate_filter_cache() -> None:
     """Call after refresh_all_years completes to force reload on next request."""
     global _filter_cache_dirty
     _filter_cache_dirty = True
+
+
+def _populate_filter_cache(conn: sqlite3.Connection) -> None:
+    global _kbli_cache, _year_cache, _last_refresh_cache, _filter_cache_dirty
+    _kbli_cache = _fetch_kbli_list(conn)
+    _year_cache = _fetch_year_list(conn)
+    _last_refresh_cache = _fetch_last_refresh(conn)
+    _filter_cache_dirty = False
 
 
 def get_connection(db_path: str) -> sqlite3.Connection:
@@ -221,24 +230,32 @@ def _fetch_year_list(conn: sqlite3.Connection) -> list[int]:
     return [row["tahun_sumber"] for row in cursor.fetchall()]
 
 
+def _fetch_last_refresh(conn: sqlite3.Connection) -> str | None:
+    row = conn.execute(
+        "SELECT finished_at FROM download_run WHERE status='success' ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    return str(row["finished_at"]) if row else None
+
+
 def get_kbli_list(conn: sqlite3.Connection) -> list[str]:
     """Return distinct valid KBLI codes. Cached in memory until invalidated."""
-    global _kbli_cache, _year_cache, _filter_cache_dirty
     if _filter_cache_dirty:
-        _kbli_cache = _fetch_kbli_list(conn)
-        _year_cache = _fetch_year_list(conn)
-        _filter_cache_dirty = False
+        _populate_filter_cache(conn)
     return _kbli_cache
 
 
 def get_year_list(conn: sqlite3.Connection) -> list[int]:
     """Return distinct non-null source years. Cached in memory until invalidated."""
-    global _kbli_cache, _year_cache, _filter_cache_dirty
     if _filter_cache_dirty:
-        _kbli_cache = _fetch_kbli_list(conn)
-        _year_cache = _fetch_year_list(conn)
-        _filter_cache_dirty = False
+        _populate_filter_cache(conn)
     return _year_cache
+
+
+def get_last_refresh_ts(conn: sqlite3.Connection) -> str | None:
+    """Return ISO timestamp of last successful download run. Cached until invalidated."""
+    if _filter_cache_dirty:
+        _populate_filter_cache(conn)
+    return _last_refresh_cache
 
 
 def get_synonyms_all(conn: sqlite3.Connection) -> list[sqlite3.Row]:

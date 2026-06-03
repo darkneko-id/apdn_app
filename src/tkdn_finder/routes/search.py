@@ -20,7 +20,7 @@ from ..constants import (
     TKDN_DEFAULT_MIN_FILTER,
     VALIDITY_EXPIRING_SOON_DAYS,
 )
-from ..db import get_connection, get_kbli_list, get_year_list
+from ..db import get_connection, get_kbli_list, get_last_refresh_ts, get_year_list
 from ..models import CertificateRow, SearchResponse
 from ..search import search as do_search
 
@@ -67,6 +67,7 @@ async def index(request: Request) -> HTMLResponse:
     try:
         kbli_list = get_kbli_list(conn)
         year_list = get_year_list(conn)
+        last_refresh = get_last_refresh_ts(conn)
     finally:
         conn.close()
 
@@ -76,6 +77,7 @@ async def index(request: Request) -> HTMLResponse:
         {
             "kbli_list": kbli_list,
             "year_list": year_list,
+            "last_refresh": last_refresh,
             "debounce_ms": SEARCH_DEBOUNCE_MS,
         },
     )

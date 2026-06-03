@@ -16,7 +16,7 @@ from ..constants import (
     TKDN_DEFAULT_MIN_FILTER,
     VALIDITY_EXPIRING_SOON_DAYS,
 )
-from ..db import get_connection
+from ..db import get_connection, get_last_refresh_ts
 from ..models import CertificateRow
 from ..search import search as do_search
 
@@ -55,8 +55,22 @@ async def export_excel(
             limit=SEARCH_RESULT_LIMIT_MAX,
             offset=0,
         )
+        last_refresh_ts = get_last_refresh_ts(conn)
     finally:
         conn.close()
+
+    # Format last_refresh in WIB for the audit trail
+    from datetime import timedelta, timezone
+    WIB = timezone(timedelta(hours=7))
+    last_refresh_wib = "—"
+    if last_refresh_ts:
+        try:
+            dt = datetime.fromisoformat(last_refresh_ts.replace(" ", "T", 1))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            last_refresh_wib = dt.astimezone(WIB).strftime("%d %b %Y %H:%M WIB")
+        except ValueError:
+            last_refresh_wib = last_refresh_ts[:19]
 
     today = date.today()
     rows = [CertificateRow.from_row(r, today) for r in result["results"]]
@@ -67,7 +81,8 @@ async def export_excel(
     ws_info = wb.active
     ws_info.title = "Info"
     ws_info.append(["TKDN Finder Export"])
-    ws_info.append(["Generated", datetime.now().isoformat()])
+    ws_info.append(["Diekspor pada", datetime.now(WIB).strftime("%d %b %Y %H:%M WIB")])
+    ws_info.append(["Data P3DN terakhir diperbarui", last_refresh_wib])
     ws_info.append(["Query", q or "(none)"])
     ws_info.append(["TKDN Min", tkdn_min])
     ws_info.append(["Validity Only", str(validity_only)])
