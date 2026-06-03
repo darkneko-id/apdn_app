@@ -50,6 +50,27 @@ Saat pertama dijalankan dengan database kosong, aplikasi akan **otomatis mengund
 
 ---
 
+### Opsi B — Portable (.zip, tanpa instalasi Python)
+
+Untuk pengguna yang tidak ingin menginstal Python. File `.exe` sudah bundel semua dependensi.
+
+**Prasyarat:** Windows 10/11 (64-bit). Tidak perlu Python.
+
+1. Unduh `tkdn-finder-portable.zip` dari halaman Releases
+2. Ekstrak ke folder pilihan, misalnya `C:\Tools\TKDN-Finder\`
+3. Klik dua kali **`run.bat`**
+
+   > Jika muncul peringatan Windows SmartScreen, klik **"More info" → "Run anyway"**
+
+4. Buka browser di **http://localhost:8000**
+5. Data TKDN akan **otomatis diunduh** saat pertama kali dijalankan (2–10 menit)
+
+Data disimpan di `%APPDATA%\TKDN-Finder\` — tidak hilang saat update versi.
+
+Lihat **[HOWTO_PORTABLE.md](HOWTO_PORTABLE.md)** untuk panduan lengkap termasuk konfigurasi, troubleshooting SSL/proxy, dan cara backup data.
+
+---
+
 ## Konfigurasi
 
 Salin `config.example.yaml` ke `config.yaml` dan sesuaikan bila perlu:
