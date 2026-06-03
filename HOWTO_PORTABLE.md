@@ -1,184 +1,199 @@
-# Panduan Instalasi & Penggunaan — TKDN Finder Portable
-
-> Panduan ini untuk pengguna yang menerima file **`tkdn-finder-portable.zip`** dan ingin menjalankan TKDN Finder tanpa perlu menginstal Python.
-
----
-
-## Isi Paket
-
-Setelah ZIP diekstrak, folder berisi:
-
-```
-tkdn-finder-portable/
-├── tkdn-finder.exe        ← aplikasi utama (Windows)
-├── run.bat                ← launcher Windows (klik dua kali di sini)
-├── config.example.yaml   ← contoh konfigurasi (opsional)
-└── HOWTO_PORTABLE.md     ← panduan ini
-```
-
-> **Data dan database** disimpan secara otomatis di `%APPDATA%\TKDN-Finder\` (biasanya `C:\Users\<nama-user>\AppData\Roaming\TKDN-Finder\`). Folder ini dibuat otomatis saat pertama kali dijalankan.
+# Panduan Penggunaan TKDN Finder
+### Versi Portable — Tanpa Instalasi
 
 ---
 
-## Langkah 1 — Ekstrak ZIP
+## TKDN Finder itu apa?
 
-Klik kanan file `tkdn-finder-portable.zip` → **Extract All…** → pilih folder tujuan, misalnya:
-
-```
-C:\Tools\TKDN-Finder\
-```
-
-Jangan jalankan `.exe` langsung dari dalam ZIP — ekstrak dulu.
+TKDN Finder adalah alat pencarian sertifikat TKDN (Tingkat Komponen Dalam Negeri) yang diterbitkan oleh Kemenperin. Dengan alat ini, Anda bisa mencari produk beserta nilai TKDN-nya dengan cepat — cukup lewat browser seperti membuka website biasa.
 
 ---
 
-## Langkah 2 — Jalankan Aplikasi
+## Yang Anda butuhkan
 
-Klik dua kali **`run.bat`** (atau `tkdn-finder.exe` jika ingin langsung).
+- Komputer Windows 10 atau Windows 11
+- Koneksi internet (untuk pertama kali mengunduh data)
+- Tidak perlu instal Python, tidak perlu instal apapun
 
-Jendela command prompt akan muncul dengan pesan:
+---
+
+## LANGKAH 1 — Ekstrak file ZIP
+
+Setelah mendapatkan file `tkdn-finder-portable.zip`:
+
+1. Klik kanan file ZIP tersebut
+2. Pilih **"Extract All…"** (atau "Ekstrak Semua")
+3. Pilih lokasi penyimpanan, misalnya di **Desktop** atau folder **Dokumen**
+4. Klik **"Extract"**
+
+Setelah selesai, akan muncul folder baru berisi beberapa file.
+
+> **Penting:** Jangan jalankan aplikasi langsung dari dalam file ZIP. Harus diekstrak dulu.
+
+---
+
+## LANGKAH 2 — Jalankan aplikasi
+
+Buka folder hasil ekstrak, lalu **klik dua kali** file bernama **`run.bat`**.
+
+Akan muncul jendela hitam (command prompt) dengan tulisan:
 
 ```
 Starting TKDN Finder...
 Buka browser di http://localhost:8000
-Tekan Ctrl+C untuk berhenti.
 ```
 
-**Biarkan jendela ini tetap terbuka** selama menggunakan aplikasi. Menutup jendela ini akan menghentikan server.
-
-### Peringatan Windows SmartScreen / Antivirus
-
-Karena file `.exe` tidak ditandatangani secara digital, Windows mungkin menampilkan peringatan:
-
-> *"Windows protected your PC"*
-
-Klik **"More info"** → **"Run anyway"** untuk melanjutkan. Ini normal untuk aplikasi portable yang tidak dikomersilkan.
-
-Jika antivirus memblokir, tambahkan folder instalasi ke daftar pengecualian (exclusion list) antivirus Anda.
+**Biarkan jendela hitam ini tetap terbuka.** Jangan ditutup selama masih menggunakan aplikasi.
 
 ---
 
-## Langkah 3 — Buka di Browser
+### Muncul peringatan dari Windows?
 
-Buka browser (Chrome, Edge, Firefox) dan masuk ke:
+Jika Windows menampilkan pesan seperti ini:
+
+> *"Windows protected your PC"* atau *"Windows melindungi PC Anda"*
+
+Ini normal. Klik **"More info"** (atau "Informasi selengkapnya"), lalu klik **"Run anyway"** (atau "Tetap jalankan").
+
+Pesan ini muncul karena aplikasi ini tidak dijual secara komersial, bukan karena berbahaya.
+
+---
+
+### Antivirus memblokir?
+
+Jika antivirus (seperti Windows Defender, Smadav, dll.) memblokir file `tkdn-finder.exe`:
+
+1. Buka pengaturan antivirus Anda
+2. Tambahkan folder TKDN Finder ke daftar **pengecualian** (exclusion / whitelist)
+3. Coba jalankan `run.bat` lagi
+
+---
+
+## LANGKAH 3 — Buka di browser
+
+Buka browser Anda (Chrome, Edge, atau Firefox), lalu ketik di kolom alamat:
 
 ```
 http://localhost:8000
 ```
 
----
-
-## Langkah 4 — Download Data (Pertama Kali)
-
-Saat pertama kali dijalankan dengan database kosong, aplikasi akan **otomatis mengunduh data TKDN** dari portal P3DN Kemenperin.
-
-- Proses berlangsung sekitar **2–10 menit** tergantung koneksi internet
-- Progress dapat dipantau di halaman **Admin** (`http://localhost:8000/admin`)
-- Selama proses berlangsung, halaman pencarian menampilkan pesan "Sedang mengunduh data..."
-- Setelah selesai, data langsung dapat dicari tanpa restart
-
-Untuk update data di kemudian hari: buka `/admin` → klik **"Refresh / Download Data"**.
+Tekan Enter. Halaman TKDN Finder akan muncul.
 
 ---
 
-## Konfigurasi (Opsional)
+## LANGKAH 4 — Tunggu data selesai diunduh (khusus pertama kali)
 
-Jika tidak ada file konfigurasi, aplikasi berjalan dengan pengaturan default. Untuk menyesuaikan:
+Saat **pertama kali** dijalankan, aplikasi akan otomatis mengunduh data TKDN dari website Kemenperin. Proses ini membutuhkan waktu sekitar **5–15 menit** tergantung kecepatan internet.
 
-1. Salin `config.example.yaml` → `config.yaml` (di folder yang sama dengan `tkdn-finder.exe`)
-2. Edit sesuai kebutuhan:
+Selama proses berlangsung, Anda bisa memantau progressnya di halaman **Admin**:
 
-```yaml
-data_dir: "data"       # diabaikan di Windows; data selalu ke %APPDATA%\TKDN-Finder\
-log_level: "INFO"
-
-p3dn:
-  verify_ssl: false    # set false jika ada masalah SSL di jaringan korporat/proxy
-  download_timeout_seconds: 120
-
-schedule:
-  enabled: true        # set true untuk refresh data otomatis setiap hari jam 02:00
-  cron: "0 2 * * *"
+```
+http://localhost:8000/admin
 ```
 
-Konfigurasi juga bisa diset via **environment variable** tanpa file YAML:
-
-| Variabel | Contoh | Keterangan |
-|----------|--------|------------|
-| `TKDN_P3DN__VERIFY_SSL` | `false` | Matikan verifikasi SSL |
-| `TKDN_SCHEDULE__ENABLED` | `true` | Aktifkan refresh otomatis |
-| `TKDN_LOG_LEVEL` | `DEBUG` | Level log |
+Setelah selesai, data langsung bisa dicari. Tidak perlu mengunduh lagi di lain waktu kecuali ingin memperbarui data.
 
 ---
 
-## Masalah Umum
+## Cara mencari sertifikat TKDN
 
-### Halaman tidak bisa dibuka di browser
+1. Ketik nama produk atau nama perusahaan di kolom pencarian
+2. Hasil pencarian muncul otomatis saat Anda mengetik
+3. Pencarian tidak harus tepat — typo atau kata dalam bahasa Inggris tetap bisa ditemukan
+   - Contoh: ketik **"pompa"** → bisa menemukan "pump", "centrifugal pump"
+   - Contoh: ketik **"valve"** → bisa menemukan "katup"
 
-Pastikan jendela command prompt masih terbuka dan menampilkan pesan server aktif. Coba akses `http://127.0.0.1:8000` (bukan `localhost`) jika browser menolak.
+### Filter yang tersedia
 
-### Error saat download data: SSL / certificate error
+| Filter | Fungsi |
+|--------|--------|
+| **TKDN Min (%)** | Tampilkan hanya produk dengan nilai TKDN di atas angka tertentu |
+| **Hanya yang masih berlaku** | Sembunyikan sertifikat yang sudah kadaluarsa |
+| **KBLI** | Filter berdasarkan jenis industri |
+| **Tahun** | Filter berdasarkan tahun penerbitan sertifikat |
 
-Jaringan korporat sering menggunakan proxy yang mengintervensi koneksi HTTPS. Tambahkan ke `config.yaml`:
+### Arti warna status sertifikat
 
-```yaml
+| Warna | Arti |
+|-------|------|
+| **Hijau — Berlaku** | Sertifikat masih aktif |
+| **Kuning — Segera Berakhir** | Akan habis dalam 60 hari, perlu konfirmasi ke vendor |
+| **Merah — Kadaluarsa** | Sudah tidak berlaku |
+
+---
+
+## Cara mengunduh hasil pencarian ke Excel
+
+Setelah melakukan pencarian, klik tombol **"Unduh Excel"**. File `.xlsx` akan otomatis terunduh ke folder Downloads Anda, siap digunakan sebagai lampiran dokumen pengadaan.
+
+---
+
+## Cara memperbarui data TKDN
+
+Data tidak diperbarui otomatis secara default. Untuk mengunduh data terbaru dari Kemenperin:
+
+1. Buka `http://localhost:8000/admin`
+2. Klik tombol **"Refresh / Download Data"**
+3. Tunggu hingga proses selesai (5–15 menit)
+
+---
+
+## Cara menghentikan aplikasi
+
+Klik jendela hitam (command prompt), lalu tekan **Ctrl + C** pada keyboard. Atau tutup saja jendela hitam tersebut.
+
+Untuk menggunakan kembali, klik dua kali `run.bat` lagi.
+
+---
+
+## Masalah umum
+
+### Browser menampilkan "This site can't be reached"
+
+Pastikan jendela hitam (command prompt) masih terbuka. Jika sudah tertutup, jalankan `run.bat` lagi, lalu refresh browser.
+
+### Data tidak bisa diunduh / error saat download
+
+Jika jaringan kantor menggunakan proxy atau firewall ketat, coba:
+
+1. Di folder yang sama dengan `tkdn-finder.exe`, buat file baru bernama **`config.yaml`**
+2. Isi file tersebut dengan teks berikut, lalu simpan:
+
+```
 p3dn:
   verify_ssl: false
 ```
 
-> Catatan: `verify_ssl: false` menonaktifkan verifikasi sertifikat SSL. Gunakan hanya di jaringan internal yang terpercaya.
+3. Tutup dan jalankan ulang `run.bat`
 
-### Port 8000 sudah dipakai aplikasi lain
+Jika masih bermasalah, hubungi tim IT kantor untuk meminta akses ke `p3dn.kemenperin.go.id`.
 
-Jalankan dari command prompt dengan port berbeda:
+### "Port already in use" atau tidak bisa jalan
 
-```cmd
-tkdn-finder.exe --port 8080
+Kemungkinan aplikasi sudah berjalan di background. Restart komputer, lalu coba lagi.
+
+---
+
+## Di mana data tersimpan?
+
+Data tersimpan otomatis di folder sistem Windows, **terpisah** dari folder aplikasi:
+
+```
+C:\Users\[nama-user]\AppData\Roaming\TKDN-Finder\
 ```
 
-Lalu buka `http://localhost:8080`.
-
-### Antivirus menghapus `tkdn-finder.exe`
-
-Tambahkan folder instalasi ke exclusion list antivirus. File `.exe` dihasilkan dari kode sumber Python menggunakan PyInstaller — tidak mengandung malware.
-
-### Bagaimana melihat log error?
-
-Jalankan dari command prompt (`cmd`) secara manual untuk melihat output lengkap:
-
-```cmd
-cd C:\Tools\TKDN-Finder
-tkdn-finder.exe
-```
+Artinya jika folder aplikasi dihapus atau dipindah, **data tidak hilang**. Dan jika ingin pindah komputer, cukup salin folder tersebut ke komputer baru.
 
 ---
 
-## Cara Menghentikan Aplikasi
+## Cara update ke versi terbaru
 
-Tekan **Ctrl+C** di jendela command prompt, atau tutup jendela tersebut.
-
----
-
-## Lokasi Data
-
-| Item | Lokasi (Windows) |
-|------|-----------------|
-| Database SQLite | `%APPDATA%\TKDN-Finder\tkdn.db` |
-| File raw download | `%APPDATA%\TKDN-Finder\raw\` |
-| Konfigurasi | `config.yaml` (di folder yang sama dengan .exe) |
-
-Untuk backup atau pindah komputer: salin folder `%APPDATA%\TKDN-Finder\` ke komputer baru, lalu jalankan `run.bat`. Data tidak perlu diunduh ulang.
-
----
-
-## Cara Update ke Versi Baru
-
-1. Unduh `tkdn-finder-portable.zip` versi terbaru
-2. Ekstrak ke folder yang sama (timpa file lama)
+1. Unduh file `tkdn-finder-portable.zip` versi terbaru
+2. Ekstrak dan **timpa** folder lama
 3. Jalankan `run.bat` seperti biasa
 
-Database di `%APPDATA%\TKDN-Finder\` tidak akan terhapus — data tetap tersimpan dan migrasi schema dijalankan otomatis.
+Data yang sudah ada tidak akan hilang.
 
 ---
 
-*Data sumber: [Kemenperin P3DN](https://p3dn.kemenperin.go.id) (publik) — dikembangkan oleh Irsan H. Fadjri*
+*Data bersumber dari [Kemenperin P3DN](https://p3dn.kemenperin.go.id) — dikembangkan oleh Irsan H. Fadjri untuk kebutuhan pengadaan PHR.*
