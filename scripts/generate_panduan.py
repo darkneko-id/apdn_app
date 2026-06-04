@@ -197,7 +197,7 @@ def cover(pdf: PanduanPDF) -> None:
     pdf.set_xy(0, 200)
     pdf.set_font("Helvetica", "", 9)
     pdf.set_text_color(120, 120, 120)
-    pdf.cell(210, 6, "PT Pertamina Hulu Rokan  |  Pengadaan & Supply Chain", align="C", ln=True)
+    pdf.cell(210, 6, "TKDN Finder  |  Alat Pencarian Sertifikat TKDN Kemenperin P3DN", align="C", ln=True)
     pdf.cell(210, 6, "Dokumen ini dibuat otomatis. Data bersumber dari Kemenperin P3DN (publik).", align="C")
 
 
@@ -218,7 +218,7 @@ def page_instalasi(pdf: PanduanPDF) -> None:
     pdf.subsection("Langkah Instalasi (Windows)")
     pdf.ln(2)
 
-    pdf.step_item(1, "Unduh file instalasi (ZIP) dari tautan yang diberikan oleh tim IT.")
+    pdf.step_item(1, "Unduh file instalasi (ZIP) dari tautan yang diberikan oleh pengelola aplikasi.")
     pdf.step_item(2,
         "Klik kanan file ZIP yang sudah diunduh, lalu pilih \"Extract All...\" "
         "atau \"Ekstrak Semua...\". Pilih folder tujuan, misalnya C:\\TKDN-Finder."
@@ -649,7 +649,7 @@ def page_admin(pdf: PanduanPDF) -> None:
         "Catatan",
         "Sinonim yang sudah ada secara default mencakup ratusan kata teknis "
         "bidang minyak & gas (pompa, katup, pipa, kompresor, dll.). "
-        "Hubungi tim IT jika diperlukan penambahan sinonim secara massal.",
+        "Hubungi pengelola aplikasi jika diperlukan penambahan sinonim secara massal.",
         bg=GRAY_LIGHT, border=(107, 114, 128)
     )
 
@@ -711,7 +711,7 @@ def page_faq(pdf: PanduanPDF) -> None:
         (
             "Apakah bisa digunakan di beberapa komputer sekaligus?",
             "Instalasi standar hanya untuk satu komputer. Untuk penggunaan bersama "
-            "(server), hubungi tim IT untuk konfigurasi jaringan."
+            "(server), hubungi pengelola aplikasi untuk konfigurasi jaringan."
         ),
     ]
 
@@ -742,7 +742,7 @@ def page_faq(pdf: PanduanPDF) -> None:
     pdf.set_x(20)
     pdf.set_font("Helvetica", "", 9)
     pdf.set_text_color(200, 220, 255)
-    pdf.cell(170, 5, "Hubungi tim IT atau kirim email ke: irsan.hf@gmail.com", align="C")
+    pdf.cell(170, 5, "Kirim email ke: irsan.hf@gmail.com", align="C")
 
 
 # ======================================================================
@@ -753,7 +753,7 @@ if __name__ == "__main__":
 
     pdf = PanduanPDF()
     pdf.set_title("TKDN Finder - Panduan Instalasi & Penggunaan")
-    pdf.set_author("PT Pertamina Hulu Rokan")
+    pdf.set_author("TKDN Finder")
     pdf.set_subject("Panduan non-IT untuk instalasi dan penggunaan TKDN Finder")
 
     cover(pdf)
