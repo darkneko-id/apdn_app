@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import sqlite3
 import time
@@ -17,6 +18,14 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 _start_time = time.time()
+
+
+def _get_stats_sync(db_path: str) -> dict[str, object]:
+    conn = get_connection(db_path)
+    try:
+        return get_stats(conn)
+    finally:
+        conn.close()
 
 
 @router.get("/health")
@@ -47,9 +56,7 @@ async def metrics() -> PlainTextResponse:
     """Expose basic Prometheus-format metrics."""
     settings = get_settings()
     try:
-        conn = get_connection(settings.get_db_path())
-        stats = get_stats(conn)
-        conn.close()
+        stats = await asyncio.to_thread(_get_stats_sync, settings.get_db_path())
         total = stats["total_rows"]
     except Exception:
         total = 0

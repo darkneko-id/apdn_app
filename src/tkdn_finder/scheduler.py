@@ -87,6 +87,9 @@ async def refresh_all_years(settings: Settings, db_path: str) -> None:
                 started_at=started_at,
                 finished_at=finished_at,
                 row_count=len(rows),
+                inserted_count=stats.get("inserted"),
+                updated_count=stats.get("updated"),
+                skipped_count=stats.get("skipped"),
             )
             rs.year_done(len(rows))
             logger.info(
@@ -123,6 +126,8 @@ async def refresh_all_years(settings: Settings, db_path: str) -> None:
             conn.close()
 
     rs.finish()
+    from .db import invalidate_filter_cache
+    invalidate_filter_cache()
 
 
 def create_scheduler(settings: Settings, db_path: str) -> AsyncIOScheduler:

@@ -15,6 +15,26 @@ logger = logging.getLogger(__name__)
 
 _MIGRATION_DIR = Path(__file__).parent.parent.parent / "migrations"
 
+# --- Filter-list cache (kbli + year + last refresh) invalidated after each bulk refresh ---
+_kbli_cache: list[str] = []
+_year_cache: list[int] = []
+_last_refresh_cache: str | None = None
+_filter_cache_dirty: bool = True
+
+
+def invalidate_filter_cache() -> None:
+    """Call after refresh_all_years completes to force reload on next request."""
+    global _filter_cache_dirty
+    _filter_cache_dirty = True
+
+
+def _populate_filter_cache(conn: sqlite3.Connection) -> None:
+    global _kbli_cache, _year_cache, _last_refresh_cache, _filter_cache_dirty
+    _kbli_cache = _fetch_kbli_list(conn)
+    _year_cache = _fetch_year_list(conn)
+    _last_refresh_cache = _fetch_last_refresh(conn)
+    _filter_cache_dirty = False
+
 
 def get_connection(db_path: str) -> sqlite3.Connection:
     """Open a SQLite connection with WAL mode and row_factory."""
@@ -120,15 +140,22 @@ def save_download_run(
     finished_at: datetime,
     row_count: int | None = None,
     error_message: str | None = None,
+    inserted_count: int | None = None,
+    updated_count: int | None = None,
+    skipped_count: int | None = None,
 ) -> None:
     """Persist a download run record."""
     conn.execute(
         """
         INSERT INTO download_run
-            (year_label, source_url, status, started_at, finished_at, row_count, error_message)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+            (year_label, source_url, status, started_at, finished_at,
+             row_count, error_message, inserted_count, updated_count, skipped_count)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (year, url, status, started_at.isoformat(), finished_at.isoformat(), row_count, error_message),
+        (
+            year, url, status, started_at.isoformat(), finished_at.isoformat(),
+            row_count, error_message, inserted_count, updated_count, skipped_count,
+        ),
     )
     conn.commit()
 
@@ -187,8 +214,7 @@ def get_certificate_by_id(conn: sqlite3.Connection, cert_id: int) -> sqlite3.Row
     return cursor.fetchone()
 
 
-def get_kbli_list(conn: sqlite3.Connection) -> list[str]:
-    """Return distinct valid KBLI codes (exactly 5 digits)."""
+def _fetch_kbli_list(conn: sqlite3.Connection) -> list[str]:
     cursor = conn.execute(
         "SELECT DISTINCT kbli FROM tkdn_certificate "
         "WHERE kbli IS NOT NULL AND kbli GLOB '[0-9][0-9][0-9][0-9][0-9]' "
@@ -197,12 +223,39 @@ def get_kbli_list(conn: sqlite3.Connection) -> list[str]:
     return [row["kbli"] for row in cursor.fetchall()]
 
 
-def get_year_list(conn: sqlite3.Connection) -> list[int]:
-    """Return distinct non-null source years."""
+def _fetch_year_list(conn: sqlite3.Connection) -> list[int]:
     cursor = conn.execute(
         "SELECT DISTINCT tahun_sumber FROM tkdn_certificate WHERE tahun_sumber IS NOT NULL ORDER BY tahun_sumber"
     )
     return [row["tahun_sumber"] for row in cursor.fetchall()]
+
+
+def _fetch_last_refresh(conn: sqlite3.Connection) -> str | None:
+    row = conn.execute(
+        "SELECT finished_at FROM download_run WHERE status='success' ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    return str(row["finished_at"]) if row else None
+
+
+def get_kbli_list(conn: sqlite3.Connection) -> list[str]:
+    """Return distinct valid KBLI codes. Cached in memory until invalidated."""
+    if _filter_cache_dirty:
+        _populate_filter_cache(conn)
+    return _kbli_cache
+
+
+def get_year_list(conn: sqlite3.Connection) -> list[int]:
+    """Return distinct non-null source years. Cached in memory until invalidated."""
+    if _filter_cache_dirty:
+        _populate_filter_cache(conn)
+    return _year_cache
+
+
+def get_last_refresh_ts(conn: sqlite3.Connection) -> str | None:
+    """Return ISO timestamp of last successful download run. Cached until invalidated."""
+    if _filter_cache_dirty:
+        _populate_filter_cache(conn)
+    return _last_refresh_cache
 
 
 def get_synonyms_all(conn: sqlite3.Connection) -> list[sqlite3.Row]:

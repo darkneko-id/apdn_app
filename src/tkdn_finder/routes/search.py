@@ -3,9 +3,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import date
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import HTMLResponse
@@ -19,12 +20,38 @@ from ..constants import (
     TKDN_DEFAULT_MIN_FILTER,
     VALIDITY_EXPIRING_SOON_DAYS,
 )
-from ..db import get_connection, get_kbli_list, get_year_list
+from ..db import get_connection, get_kbli_list, get_last_refresh_ts, get_year_list
 from ..models import CertificateRow, SearchResponse
 from ..search import search as do_search
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+def _search_sync(
+    db_path: str,
+    query: str,
+    tkdn_min: float,
+    validity_only: bool,
+    kbli: str | None,
+    year_int: int | None,
+    limit: int,
+    offset: int,
+) -> dict[str, Any]:
+    conn = get_connection(db_path)
+    try:
+        return do_search(
+            conn=conn,
+            query=query,
+            tkdn_min=tkdn_min,
+            validity_only=validity_only,
+            kbli=kbli,
+            year=year_int,
+            limit=limit,
+            offset=offset,
+        )
+    finally:
+        conn.close()
 
 
 def get_templates(request: Request) -> Jinja2Templates:
@@ -40,6 +67,7 @@ async def index(request: Request) -> HTMLResponse:
     try:
         kbli_list = get_kbli_list(conn)
         year_list = get_year_list(conn)
+        last_refresh = get_last_refresh_ts(conn)
     finally:
         conn.close()
 
@@ -49,6 +77,7 @@ async def index(request: Request) -> HTMLResponse:
         {
             "kbli_list": kbli_list,
             "year_list": year_list,
+            "last_refresh": last_refresh,
             "debounce_ms": SEARCH_DEBOUNCE_MS,
         },
     )
@@ -82,20 +111,10 @@ async def search_htmx(
     offset = (page - 1) * limit
     year_int: int | None = int(year) if year else None
 
-    conn = get_connection(settings.get_db_path())
-    try:
-        result = do_search(
-            conn=conn,
-            query=q,
-            tkdn_min=tkdn_min,
-            validity_only=validity_only,
-            kbli=kbli or None,
-            year=year_int,
-            limit=limit,
-            offset=offset,
-        )
-    finally:
-        conn.close()
+    result = await asyncio.to_thread(
+        _search_sync,
+        settings.get_db_path(), q, tkdn_min, validity_only, kbli or None, year_int, limit, offset,
+    )
 
     today = date.today()
     cert_rows = [CertificateRow.from_row(r, today) for r in result["results"]]
@@ -157,20 +176,10 @@ async def search_api(
     offset = (page - 1) * limit
     year_int: int | None = int(year) if year else None
 
-    conn = get_connection(settings.get_db_path())
-    try:
-        result = do_search(
-            conn=conn,
-            query=q,
-            tkdn_min=tkdn_min,
-            validity_only=validity_only,
-            kbli=kbli or None,
-            year=year_int,
-            limit=limit,
-            offset=offset,
-        )
-    finally:
-        conn.close()
+    result = await asyncio.to_thread(
+        _search_sync,
+        settings.get_db_path(), q, tkdn_min, validity_only, kbli or None, year_int, limit, offset,
+    )
 
     today = date.today()
     cert_rows = [CertificateRow.from_row(r, today) for r in result["results"]]
@@ -212,17 +221,14 @@ async def enrich_tipe_from_search(
             '<span class="text-xs text-red-500">Ketik kata kunci pencarian terlebih dahulu.</span>'
         )
 
+    year_int: int | None = int(year) if year else None
     conn = get_connection(settings.get_db_path())
     try:
         # Re-run DB search to get distinct company names from current results
-        year_int: int | None = int(year) if year else None
-        result = do_search(
-            conn=conn,
-            query=query,
-            tkdn_min=tkdn_min,
-            kbli=kbli or None,
-            year=year_int,
-            limit=SEARCH_RESULT_LIMIT_DEFAULT,
+        result = await asyncio.to_thread(
+            _search_sync,
+            settings.get_db_path(), query, tkdn_min, False, kbli or None, year_int,
+            SEARCH_RESULT_LIMIT_DEFAULT, 0,
         )
         companies: list[str] = list(
             dict.fromkeys(

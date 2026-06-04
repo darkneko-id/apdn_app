@@ -68,7 +68,7 @@
                         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Status</th>
                         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Mulai</th>
                         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Selesai</th>
-                        <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Baris</th>
+                        <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Baris / Perubahan</th>
                         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Error</th>
                     </tr>
                 </thead>
@@ -98,7 +98,20 @@
                             {{ run.finished_at | wib }}
                         </td>
                         <td class="px-4 py-3 text-right font-mono text-gray-700 dark:text-gray-300">
-                            {% if run.row_count is not none %}{{ "{:,}".format(run.row_count) }}{% else %}—{% endif %}
+                            {% if run.row_count is not none %}
+                            <div class="text-sm">{{ "{:,}".format(run.row_count) }}</div>
+                            {% endif %}
+                            {% if run.inserted_count is not none %}
+                            <div class="text-xs tabular-nums space-x-1 mt-0.5">
+                                <span class="text-green-600 dark:text-green-400" title="Baru masuk DB">+{{ "{:,}".format(run.inserted_count) }}</span>
+                                <span class="text-blue-600 dark:text-blue-400" title="Diperbarui">~{{ "{:,}".format(run.updated_count) }}</span>
+                                {% if run.skipped_count %}
+                                <span class="text-red-500 dark:text-red-400" title="Dilewati (error)">✗{{ "{:,}".format(run.skipped_count) }}</span>
+                                {% endif %}
+                            </div>
+                            {% elif run.row_count is none %}
+                            <span class="text-gray-400">—</span>
+                            {% endif %}
                         </td>
                         <td class="px-4 py-3 text-red-600 dark:text-red-400 text-xs max-w-xs truncate">
                             {{ run.error_message or "" }}

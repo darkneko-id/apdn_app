@@ -79,6 +79,9 @@ class DownloadRunRow(BaseModel):
     finished_at: datetime | None = None
     row_count: int | None = None
     error_message: str | None = None
+    inserted_count: int | None = None
+    updated_count: int | None = None
+    skipped_count: int | None = None
 
     @classmethod
     def from_row(cls, row: object) -> "DownloadRunRow":
