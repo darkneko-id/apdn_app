@@ -105,7 +105,11 @@
         </div>
     </form>
 
-    <div id="results">
+    <div id="results"
+         hx-get="/search"
+         hx-trigger="enrich-done from:body"
+         hx-include="#search-form"
+         hx-indicator="#spinner">
         <p class="text-xs text-gray-400 dark:text-gray-600 italic">Ketik kata kunci untuk mulai mencari...</p>
     </div>
 </div>

@@ -267,6 +267,7 @@ async def enrich_tipe_from_search(
     return HTMLResponse(
         f'<span class="text-xs text-green-700">'
         f'Tipe diperbarui: {total["updated"]} baris, {total["inserted"]} baru '
-        f'({len(companies)} perusahaan). Refresh hasil untuk melihat perubahan.'
-        f'</span>'
+        f'({len(companies)} perusahaan).'
+        f'</span>',
+        headers={"HX-Trigger": "enrich-done"},
     )
