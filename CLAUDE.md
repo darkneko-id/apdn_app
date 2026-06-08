@@ -77,7 +77,7 @@ Two-stage pipeline in `search.py`:
 1. **FTS5 candidate retrieval** — MATCH query with porter/unicode61 tokenizer. Query tokens are expanded with synonyms from the `synonym` table at query time (not index time). Filters for validity/TKDN%/KBLI/year pushed to SQL WHERE. Returns top 500 candidates by FTS5 rank.
 2. **Rerank** — `rapidfuzz.fuzz.token_set_ratio` against the original query. Final score: fuzzy 50% + TKDN% 20% + recency 15% + validity-active 15%. Weights live in `constants.py`.
 
-Note: `tipe` and `merek` are stored in `tkdn_certificate` but **not** indexed in `tkdn_search` (the FTS5 virtual table). The FTS5 columns are: `nama_perusahaan`, `nama_produk`, `merek`, `spesifikasi`, `kbli`, `kelompok_barang`.
+The FTS5 columns are: `nama_perusahaan`, `nama_produk`, `merek`, `tipe`, `spesifikasi`, `kbli`, `kelompok_barang`.
 
 ## Architecture: web layer
 

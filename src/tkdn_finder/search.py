@@ -67,6 +67,7 @@ def _compute_score(
             [
                 row.get("nama_produk") or "",
                 row.get("nama_perusahaan") or "",
+                row.get("tipe") or "",
                 row.get("spesifikasi") or "",
                 row.get("merek") or "",
             ],
@@ -182,9 +183,9 @@ def search(
             like_val = f"%{query.strip()}%"
             fallback_clauses.insert(
                 0,
-                "(c.nama_produk LIKE ? OR c.nama_perusahaan LIKE ? OR c.spesifikasi LIKE ?)",
+                "(c.nama_produk LIKE ? OR c.nama_perusahaan LIKE ? OR c.tipe LIKE ? OR c.spesifikasi LIKE ?)",
             )
-            fallback_params = [like_val, like_val, like_val] + fallback_params
+            fallback_params = [like_val, like_val, like_val, like_val] + fallback_params
 
         fallback_where = ("WHERE " + " AND ".join(fallback_clauses)) if fallback_clauses else ""
         fallback_sql = f"""
