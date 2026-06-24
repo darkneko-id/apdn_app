@@ -79,10 +79,20 @@ class TestMergeAndUpsertCounts:
 
 
 # ---------------------------------------------------------------------------
-# Dedup key: (nama_perusahaan, nama_produk, spesifikasi, merek, nilai_tkdn)
+# Dedup key: (nama_perusahaan, nama_produk, spesifikasi, merek, nilai_tkdn, tipe)
 # ---------------------------------------------------------------------------
 
 class TestDedupKey:
+    def test_different_tipe_creates_separate_rows(
+        self, db: sqlite3.Connection, cert_factory: Any
+    ) -> None:
+        merge_and_upsert(db, [
+            cert_factory(tipe="Type A"),
+            cert_factory(tipe="Type B"),
+        ])
+
+        assert _count(db) == 2
+
     def test_different_merek_creates_separate_rows(
         self, db: sqlite3.Connection, cert_factory: Any
     ) -> None:
@@ -134,22 +144,38 @@ class TestTipePreservation:
         db.commit()
 
         # 3. Re-download: merge same row with tipe='' again
+        # Merger pre-check: enriched variant exists → update metadata in-place, no new row
         merge_and_upsert(db, [cert_factory(tipe="")])
 
+        assert _count(db) == 1  # no redundant tipe='' row inserted
         row = _fetch_one(db, nama_produk="Centrifugal Pump")
         assert row is not None
         assert row["tipe"] == "Cable Ladder SLHD"  # enriched tipe preserved
 
-    def test_nonempty_tipe_from_source_is_used(
+    def test_multiple_enriched_tipe_variants_preserved_on_reimport(
         self, db: sqlite3.Connection, cert_factory: Any
     ) -> None:
-        # When the source does have a tipe, it should be applied
+        """Re-download with tipe='' must not clobber multiple enriched tipe variants."""
+        merge_and_upsert(db, [cert_factory(tipe="Type A")])
+        merge_and_upsert(db, [cert_factory(tipe="Type B")])
+        assert _count(db) == 2
+
+        merge_and_upsert(db, [cert_factory(tipe="")])
+
+        assert _count(db) == 2  # no tipe='' row added alongside enriched variants
+
+    def test_nonempty_tipe_from_source_creates_distinct_row(
+        self, db: sqlite3.Connection, cert_factory: Any
+    ) -> None:
+        # tipe='' and tipe='Type A' are distinct rows under the new UNIQUE key
         merge_and_upsert(db, [cert_factory(tipe="")])
         merge_and_upsert(db, [cert_factory(tipe="Type A")])
 
-        row = _fetch_one(db, nama_produk="Centrifugal Pump")
-        assert row is not None
-        assert row["tipe"] == "Type A"
+        assert _count(db) == 2
+        rows = db.execute(
+            "SELECT tipe FROM tkdn_certificate ORDER BY tipe"
+        ).fetchall()
+        assert {r["tipe"] for r in rows} == {"", "Type A"}
 
 
 # ---------------------------------------------------------------------------

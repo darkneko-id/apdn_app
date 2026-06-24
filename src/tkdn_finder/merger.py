@@ -37,8 +37,7 @@ def merge_and_upsert(conn: sqlite3.Connection, rows: list[dict[str, Any]]) -> di
             (:nama_perusahaan, :nama_produk, :spesifikasi, :merek, :tipe, :nilai_tkdn,
              :kode_hs, :kbli, :kelompok_barang, :alamat, :provinsi, :masa_berlaku_akhir,
              :tahun_sumber, :ingested_at)
-        ON CONFLICT(nama_perusahaan, nama_produk, spesifikasi, merek, nilai_tkdn) DO UPDATE SET
-            tipe = CASE WHEN excluded.tipe != '' THEN excluded.tipe ELSE tipe END,
+        ON CONFLICT(nama_perusahaan, nama_produk, spesifikasi, merek, nilai_tkdn, tipe) DO UPDATE SET
             kode_hs = excluded.kode_hs,
             kbli = excluded.kbli,
             kelompok_barang = excluded.kelompok_barang,
@@ -47,6 +46,25 @@ def merge_and_upsert(conn: sqlite3.Connection, rows: list[dict[str, Any]]) -> di
             masa_berlaku_akhir = excluded.masa_berlaku_akhir,
             tahun_sumber = excluded.tahun_sumber,
             ingested_at = excluded.ingested_at
+    """
+
+    # SQL for updating metadata on enriched tipe variants when P3DN re-imports tipe=''.
+    _update_enriched_sql = """
+        UPDATE tkdn_certificate SET
+            kode_hs = :kode_hs,
+            kbli = :kbli,
+            kelompok_barang = :kelompok_barang,
+            alamat = :alamat,
+            provinsi = :provinsi,
+            masa_berlaku_akhir = :masa_berlaku_akhir,
+            tahun_sumber = :tahun_sumber,
+            ingested_at = :ingested_at
+        WHERE nama_perusahaan = :nama_perusahaan
+          AND nama_produk = :nama_produk
+          AND spesifikasi = :spesifikasi
+          AND merek = :merek
+          AND ABS(COALESCE(nilai_tkdn, -999) - COALESCE(:nilai_tkdn, -999)) < 0.1
+          AND tipe != ''
     """
 
     for row in rows:
@@ -60,6 +78,16 @@ def merge_and_upsert(conn: sqlite3.Connection, rows: list[dict[str, Any]]) -> di
                 "tipe": row.get("tipe") or "",
                 "merek": row.get("merek") or "",
             }
+
+            # P3DN bulk rows always have tipe=''. If enriched tipe variants already
+            # exist for the same (company, produk, spec, merek, nilai_tkdn), update
+            # their metadata in-place rather than inserting a redundant tipe='' row.
+            if not row_with_ts["tipe"]:
+                cur = conn.execute(_update_enriched_sql, row_with_ts)
+                if cur.rowcount > 0:
+                    stats["updated"] += cur.rowcount
+                    continue
+
             before_rowid = conn.execute("SELECT MAX(id) FROM tkdn_certificate").fetchone()[0] or 0
             conn.execute(insert_sql, row_with_ts)
             after_rowid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
