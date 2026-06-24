@@ -289,8 +289,9 @@ def enrich_tipe_in_db(
             ).fetchone()
 
             if db_row:
-                # Clone existing row with new Tipe
-                conn.execute(
+                # Clone existing row with new Tipe. INSERT OR IGNORE is idempotent:
+                # if a previous enrichment run already inserted this exact tipe, skip.
+                cur = conn.execute(
                     """INSERT OR IGNORE INTO tkdn_certificate
                        (nama_perusahaan, nama_produk, spesifikasi, merek, tipe,
                         nilai_tkdn, kode_hs, kbli, kelompok_barang, alamat, provinsi,
@@ -308,7 +309,10 @@ def enrich_tipe_in_db(
                         now_str,
                     ),
                 )
-                stats["inserted"] += 1
+                if cur.rowcount > 0:
+                    stats["inserted"] += 1
+                else:
+                    stats["skipped"] += 1
             else:
                 stats["skipped"] += 1
 
