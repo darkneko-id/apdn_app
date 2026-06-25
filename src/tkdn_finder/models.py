@@ -25,6 +25,7 @@ class CertificateRow(BaseModel):
     provinsi: str | None = None
     masa_berlaku_akhir: date | None = None
     tahun_sumber: int | None = None
+    p3dn_search_last_seen: date | None = None
     is_valid: bool = False
     score: float | None = None
 
@@ -53,9 +54,34 @@ class CertificateRow(BaseModel):
         else:
             d["is_valid"] = False
 
+        # Parse p3dn_search_last_seen
+        p3dn_last = d.get("p3dn_search_last_seen")
+        if isinstance(p3dn_last, str) and p3dn_last:
+            try:
+                d["p3dn_search_last_seen"] = date.fromisoformat(p3dn_last)
+            except ValueError:
+                d["p3dn_search_last_seen"] = None
+
         # Remove score from DB dict (it may be added separately)
         d.setdefault("score", None)
         return cls(**d)
+
+
+def compute_validity_label(cert: CertificateRow, today: date, expiring_soon_days: int = 60) -> str:
+    """Return a display label string for a certificate's validity status.
+
+    Labels: 'valid' | 'expiring' | 'expired' | 'p3dn_active' | 'p3dn_not_found' | 'unknown'
+    """
+    if cert.masa_berlaku_akhir is not None:
+        if cert.masa_berlaku_akhir < today:
+            return "expired"
+        if (cert.masa_berlaku_akhir - today).days <= expiring_soon_days:
+            return "expiring"
+        return "valid"
+    # No masa_berlaku_akhir — check P3DN tracking
+    if cert.p3dn_search_last_seen is not None:
+        return "p3dn_active" if cert.p3dn_search_last_seen >= today else "p3dn_not_found"
+    return "unknown"
 
 
 class SearchResponse(BaseModel):

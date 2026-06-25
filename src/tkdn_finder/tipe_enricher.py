@@ -164,6 +164,8 @@ async def scrape_and_enrich_for_query(
 
     # Group by company name, then enrich each group
     from collections import defaultdict
+
+    from .db import resolve_company_name
     by_company: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in all_rows:
         by_company[row["nama_perusahaan"]].append(row)
@@ -171,7 +173,7 @@ async def scrape_and_enrich_for_query(
     total: dict[str, int] = {"updated": 0, "inserted": 0, "skipped": 0, "companies": 0}
     for company, rows in by_company.items():
         # Try exact match first, then fuzzy (ignore dots/spaces)
-        db_name = _resolve_db_company_name(conn, company)
+        db_name = resolve_company_name(conn, company)
         if not db_name:
             total["skipped"] += len(rows)
             continue
@@ -182,29 +184,6 @@ async def scrape_and_enrich_for_query(
         total["companies"] += 1
 
     return total
-
-
-def _resolve_db_company_name(conn: sqlite3.Connection, website_name: str) -> str | None:
-    """Find the exact DB company name matching a website company name.
-
-    Tries exact match first, then strips dots/extra spaces for fuzzy match.
-    """
-    # Exact match
-    row = conn.execute(
-        "SELECT nama_perusahaan FROM tkdn_certificate WHERE nama_perusahaan = ? LIMIT 1",
-        (website_name,),
-    ).fetchone()
-    if row:
-        return row[0]
-
-    # Normalised match: collapse "PT." → "PT", strip extra spaces
-    normalized = website_name.replace(".", "").replace("  ", " ").strip()
-    row = conn.execute(
-        "SELECT nama_perusahaan FROM tkdn_certificate "
-        "WHERE REPLACE(REPLACE(nama_perusahaan,'.',''),'  ',' ') = ? LIMIT 1",
-        (normalized,),
-    ).fetchone()
-    return row[0] if row else None
 
 
 def enrich_tipe_in_db(

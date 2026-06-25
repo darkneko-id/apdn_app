@@ -21,7 +21,7 @@ from ..constants import (
     VALIDITY_EXPIRING_SOON_DAYS,
 )
 from ..db import get_connection, get_kbli_list, get_last_refresh_ts, get_year_list
-from ..models import CertificateRow, SearchResponse
+from ..models import CertificateRow, SearchResponse, compute_validity_label
 from ..search import search as do_search
 
 logger = logging.getLogger(__name__)
@@ -125,17 +125,10 @@ async def search_htmx(
         cert_rows.sort(key=sort_key, reverse=(sort_dir == "desc"))
 
     # Tag each row with validity status label
-    tagged_rows = []
-    for cert in cert_rows:
-        if cert.masa_berlaku_akhir is None:
-            validity_label = "unknown"
-        elif cert.masa_berlaku_akhir < today:
-            validity_label = "expired"
-        elif (cert.masa_berlaku_akhir - today).days <= VALIDITY_EXPIRING_SOON_DAYS:
-            validity_label = "expiring"
-        else:
-            validity_label = "valid"
-        tagged_rows.append((cert, validity_label))
+    tagged_rows = [
+        (cert, compute_validity_label(cert, today, VALIDITY_EXPIRING_SOON_DAYS))
+        for cert in cert_rows
+    ]
 
     total_pages = max(1, (result["total"] + limit - 1) // limit)
 
@@ -201,16 +194,17 @@ async def enrich_tipe_from_search(
     kbli: str | None = Form(None),
     year: str | None = Form(None),
 ) -> HTMLResponse:
-    """Enrich Tipe for all companies visible in the current search results.
+    """Enrich Tipe and import missing P3DN products for companies in current search results.
 
-    Strategy: re-run the DB search to get distinct company names from the
-    current result page, then scrape tkdn.kemenperin.go.id per company.
-    Works for both single-company and multi-company result sets.
+    1. Scrapes tkdn.kemenperin.go.id per company to backfill Tipe.
+    2. Scrapes p3dn.kemenperin.go.id per company to import missing products and
+       update p3dn_search_last_seen on existing rows.
     """
     from html import escape
 
     from ..config import get_settings
     from ..db import get_connection
+    from ..p3dn_search_scraper import scrape_and_import_p3dn
     from ..search import search as do_search
     from ..tipe_enricher import enrich_tipe_in_db, scrape_tipe_for_company
 
@@ -243,18 +237,31 @@ async def enrich_tipe_from_search(
                 '<span class="text-xs text-gray-400">Tidak ada hasil untuk di-enrich.</span>'
             )
 
-        total = {"updated": 0, "inserted": 0, "skipped": 0}
+        today = date.today()
+        tipe_total = {"updated": 0, "inserted": 0}
+        p3dn_total = {"updated": 0, "inserted": 0}
+
         for company in companies:
+            # 1. Tipe enrichment from tkdn.kemenperin.go.id
             try:
                 scraped = await scrape_tipe_for_company(
                     company, verify_ssl=settings.p3dn.verify_ssl
                 )
                 stats = enrich_tipe_in_db(conn, company, scraped)
-                total["updated"] += stats["updated"]
-                total["inserted"] += stats["inserted"]
-                total["skipped"] += stats["skipped"]
+                tipe_total["updated"] += stats["updated"]
+                tipe_total["inserted"] += stats["inserted"]
             except Exception as exc:
                 logger.warning("Enrich Tipe failed for %r: %s", company, exc)
+
+            # 2. P3DN product import from p3dn.kemenperin.go.id
+            try:
+                stats = await scrape_and_import_p3dn(
+                    conn, company, today, verify_ssl=settings.p3dn.verify_ssl
+                )
+                p3dn_total["updated"] += stats["updated"]
+                p3dn_total["inserted"] += stats["inserted"]
+            except Exception as exc:
+                logger.warning("P3DN import failed for %r: %s", company, exc)
 
     except Exception as exc:
         logger.exception("Tipe enrichment from search failed: %s", exc)
@@ -264,9 +271,19 @@ async def enrich_tipe_from_search(
     finally:
         conn.close()
 
+    parts = []
+    if tipe_total["updated"] or tipe_total["inserted"]:
+        parts.append(
+            f'Tipe: {tipe_total["updated"]} diperbarui, {tipe_total["inserted"]} baru'
+        )
+    if p3dn_total["inserted"]:
+        parts.append(f'P3DN: {p3dn_total["inserted"]} produk baru diimpor')
+    if p3dn_total["updated"] and not p3dn_total["inserted"]:
+        parts.append(f'P3DN: {p3dn_total["updated"]} baris dicek')
+    summary = " | ".join(parts) if parts else "Tidak ada perubahan"
+
     return HTMLResponse(
         f'<span class="text-xs text-green-700">'
-        f'Tipe diperbarui: {total["updated"]} baris, {total["inserted"]} baru '
-        f'({len(companies)} perusahaan). Refresh hasil untuk melihat perubahan.'
+        f'{summary} ({len(companies)} perusahaan). Refresh hasil untuk melihat perubahan.'
         f'</span>'
     )
