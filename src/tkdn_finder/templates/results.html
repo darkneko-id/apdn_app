@@ -137,8 +137,13 @@
                     {% else %}<span class="text-gray-300 dark:text-gray-700">—</span>{% endif %}
                 </td>
                 <td class="px-3 py-0 align-middle whitespace-nowrap text-gray-600 dark:text-gray-400 min-w-[105px]">
-                    {% if cert.masa_berlaku_akhir %}{{ cert.masa_berlaku_akhir.strftime('%d %b %Y') }}
-                    {% else %}<span class="text-gray-300 dark:text-gray-700">—</span>{% endif %}
+                    {% if cert.masa_berlaku_akhir %}
+                        {{ cert.masa_berlaku_akhir.strftime('%d %b %Y') }}
+                    {% elif cert.p3dn_search_last_seen %}
+                        <span class="text-gray-400 dark:text-gray-600 text-xs">P3DN {{ cert.p3dn_search_last_seen.strftime('%d %b %Y') }}</span>
+                    {% else %}
+                        <span class="text-gray-300 dark:text-gray-700">—</span>
+                    {% endif %}
                 </td>
                 <td class="px-3 py-0 align-middle whitespace-nowrap min-w-[90px]">
                     {% if validity_label == 'valid' %}
@@ -147,6 +152,10 @@
                     <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300">Habis</span>
                     {% elif validity_label == 'expired' %}
                     <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-300">Kadaluarsa</span>
+                    {% elif validity_label == 'p3dn_active' %}
+                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300">P3DN Aktif</span>
+                    {% elif validity_label == 'p3dn_not_found' %}
+                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-orange-100 dark:bg-orange-900/40 text-orange-800 dark:text-orange-300" title="Terakhir terlihat di P3DN: {{ cert.p3dn_search_last_seen }}">Tidak di P3DN</span>
                     {% else %}
                     <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-500">—</span>
                     {% endif %}

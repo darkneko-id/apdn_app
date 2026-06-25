@@ -1,0 +1,141 @@
+"""Tests for p3dn_search_scraper.py — upsert_p3dn_rows logic."""
+
+from __future__ import annotations
+
+import sqlite3
+from datetime import date
+from typing import Any
+
+import pytest
+
+from tkdn_finder.merger import merge_and_upsert
+from tkdn_finder.p3dn_search_scraper import upsert_p3dn_rows
+
+
+TODAY = date(2026, 6, 25)
+TODAY_STR = "2026-06-25"
+
+
+def _count(conn: sqlite3.Connection) -> int:
+    return conn.execute("SELECT COUNT(*) FROM tkdn_certificate").fetchone()[0]
+
+
+def _fetch_one(conn: sqlite3.Connection, **where: Any) -> sqlite3.Row | None:
+    col, val = next(iter(where.items()))
+    return conn.execute(
+        f"SELECT * FROM tkdn_certificate WHERE {col} = ?", (val,)
+    ).fetchone()
+
+
+def _fetch_all(conn: sqlite3.Connection, nama_produk: str) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM tkdn_certificate WHERE nama_produk = ?", (nama_produk,)
+    ).fetchall()
+
+
+class TestUpsertP3dnRowsUpdatesExisting:
+    def test_sets_p3dn_search_last_seen_on_matching_row(
+        self, db: sqlite3.Connection, cert_factory: Any
+    ) -> None:
+        merge_and_upsert(db, [cert_factory(nama_produk="Seamless Pipe", nilai_tkdn=10.29, tipe="")])
+
+        stats = upsert_p3dn_rows(
+            db, "PT Test Corp",
+            [{"nama_produk": "Seamless Pipe", "spesifikasi": "6 inch 200 GPM", "nilai_tkdn": 10.29}],
+            TODAY,
+        )
+
+        assert stats["updated"] >= 1
+        assert stats["inserted"] == 0
+        assert _count(db) == 1  # no duplicate created
+        row = _fetch_one(db, nama_produk="Seamless Pipe")
+        assert row is not None
+        assert row["p3dn_search_last_seen"] == TODAY_STR
+
+    def test_fuzzy_tkdn_tolerance_matches_within_half_percent(
+        self, db: sqlite3.Connection, cert_factory: Any
+    ) -> None:
+        merge_and_upsert(db, [cert_factory(nama_produk="ERW Pipe", nilai_tkdn=58.30)])
+
+        stats = upsert_p3dn_rows(
+            db, "PT Test Corp",
+            [{"nama_produk": "ERW Pipe", "spesifikasi": "6 inch 200 GPM", "nilai_tkdn": 58.35}],
+            TODAY,
+        )
+
+        assert stats["updated"] >= 1
+        assert _count(db) == 1
+
+    def test_updates_all_tipe_variants_for_product(
+        self, db: sqlite3.Connection, cert_factory: Any
+    ) -> None:
+        merge_and_upsert(db, [cert_factory(tipe="Variant A", nilai_tkdn=40.0)])
+        merge_and_upsert(db, [cert_factory(tipe="Variant B", nilai_tkdn=40.0)])
+        assert _count(db) == 2
+
+        stats = upsert_p3dn_rows(
+            db, "PT Test Corp",
+            [{"nama_produk": "Centrifugal Pump", "spesifikasi": "6 inch 200 GPM", "nilai_tkdn": 40.0}],
+            TODAY,
+        )
+
+        assert stats["updated"] == 2
+        rows = _fetch_all(db, "Centrifugal Pump")
+        assert all(r["p3dn_search_last_seen"] == TODAY_STR for r in rows)
+
+
+class TestUpsertP3dnRowsInsertsNew:
+    def test_inserts_product_absent_from_db(self, db: sqlite3.Connection) -> None:
+        stats = upsert_p3dn_rows(
+            db, "PT Test Corp",
+            [{"nama_produk": "Pipa Baja ERW", "spesifikasi": "", "nilai_tkdn": 58.30}],
+            TODAY,
+        )
+
+        assert stats["inserted"] == 1
+        assert _count(db) == 1
+        row = _fetch_one(db, nama_produk="Pipa Baja ERW")
+        assert row is not None
+        assert row["p3dn_search_last_seen"] == TODAY_STR
+        assert row["masa_berlaku_akhir"] is None
+        assert row["tahun_sumber"] is None
+
+    def test_inserts_alamat_when_provided(self, db: sqlite3.Connection) -> None:
+        upsert_p3dn_rows(
+            db, "PT Test Corp",
+            [{"nama_produk": "Pipa SAW", "spesifikasi": "", "nilai_tkdn": 53.85,
+              "alamat": "Jl. Baja No. 1"}],
+            TODAY,
+        )
+
+        row = _fetch_one(db, nama_produk="Pipa SAW")
+        assert row is not None
+        assert row["alamat"] == "Jl. Baja No. 1"
+
+    def test_skips_row_with_empty_produk(self, db: sqlite3.Connection) -> None:
+        stats = upsert_p3dn_rows(
+            db, "PT Test Corp",
+            [{"nama_produk": "", "spesifikasi": "", "nilai_tkdn": 40.0}],
+            TODAY,
+        )
+
+        assert stats["skipped"] == 1
+        assert _count(db) == 0
+
+
+class TestUpsertP3dnRowsIdempotent:
+    def test_no_duplicate_on_second_call(self, db: sqlite3.Connection) -> None:
+        rows = [{"nama_produk": "Pipa ERW", "spesifikasi": "", "nilai_tkdn": 58.30}]
+        upsert_p3dn_rows(db, "PT Test Corp", rows, TODAY)
+        upsert_p3dn_rows(db, "PT Test Corp", rows, TODAY)
+
+        assert _count(db) == 1
+
+    def test_last_seen_updated_on_second_call(self, db: sqlite3.Connection) -> None:
+        rows = [{"nama_produk": "Pipa ERW", "spesifikasi": "", "nilai_tkdn": 58.30}]
+        upsert_p3dn_rows(db, "PT Test Corp", rows, date(2026, 6, 24))
+        upsert_p3dn_rows(db, "PT Test Corp", rows, TODAY)
+
+        row = _fetch_one(db, nama_produk="Pipa ERW")
+        assert row is not None
+        assert row["p3dn_search_last_seen"] == TODAY_STR

@@ -13,7 +13,7 @@ from fastapi.templating import Jinja2Templates
 from ..config import get_settings
 from ..constants import VALIDITY_EXPIRING_SOON_DAYS
 from ..db import get_certificate_by_id, get_connection
-from ..models import CertificateRow
+from ..models import CertificateRow, compute_validity_label
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -36,15 +36,7 @@ async def cert_detail(cert_id: int, request: Request) -> HTMLResponse:
 
     today = date.today()
     cert = CertificateRow.from_row(row, today)
-
-    if cert.masa_berlaku_akhir is None:
-        validity_label = "unknown"
-    elif cert.masa_berlaku_akhir < today:
-        validity_label = "expired"
-    elif (cert.masa_berlaku_akhir - today).days <= VALIDITY_EXPIRING_SOON_DAYS:
-        validity_label = "expiring"
-    else:
-        validity_label = "valid"
+    validity_label = compute_validity_label(cert, today, VALIDITY_EXPIRING_SOON_DAYS)
 
     return templates.TemplateResponse(
         request,

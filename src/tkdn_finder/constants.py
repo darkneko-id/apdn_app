@@ -2,6 +2,9 @@
 """All magic values live here. Never inline constants in business logic."""
 
 P3DN_HOMEPAGE_URL = "https://p3dn.kemenperin.go.id/rekap.php"
+P3DN_BASE_URL = "https://p3dn.kemenperin.go.id"
+P3DN_SEARCH_URL = "https://p3dn.kemenperin.go.id/search.php"
+P3DN_DETAIL_BASE_URL = "https://p3dn.kemenperin.go.id/sertifikat_perush.php"
 EXPORT_LINK_HREF_PATTERN = r"export_excel\.php"
 YEAR_EXTRACTION_PATTERN = r"(\d{4})"
 KBLI_PATTERN = r"^\d{5}$"

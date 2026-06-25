@@ -281,3 +281,24 @@ def delete_synonym(conn: sqlite3.Connection, synonym_id: int) -> None:
     """Delete a synonym by id."""
     conn.execute("DELETE FROM synonym WHERE id = ?", (synonym_id,))
     conn.commit()
+
+
+def resolve_company_name(conn: sqlite3.Connection, website_name: str) -> str | None:
+    """Find the exact DB company name matching a website/scraped company name.
+
+    Tries exact match first, then strips dots/extra spaces for fuzzy match.
+    """
+    row = conn.execute(
+        "SELECT nama_perusahaan FROM tkdn_certificate WHERE nama_perusahaan = ? LIMIT 1",
+        (website_name,),
+    ).fetchone()
+    if row:
+        return row[0]
+
+    normalized = website_name.replace(".", "").replace("  ", " ").strip()
+    row = conn.execute(
+        "SELECT nama_perusahaan FROM tkdn_certificate "
+        "WHERE REPLACE(REPLACE(nama_perusahaan,'.',''),'  ',' ') = ? LIMIT 1",
+        (normalized,),
+    ).fetchone()
+    return row[0] if row else None

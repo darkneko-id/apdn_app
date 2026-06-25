@@ -35,6 +35,14 @@
                     <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-red-400/20 text-red-100 border border-red-400/30">
                         Kadaluarsa
                     </span>
+                    {% elif validity_label == 'p3dn_active' %}
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-blue-400/20 text-blue-100 border border-blue-400/30">
+                        P3DN Aktif
+                    </span>
+                    {% elif validity_label == 'p3dn_not_found' %}
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-orange-400/20 text-orange-100 border border-orange-400/30">
+                        Tidak di P3DN
+                    </span>
                     {% else %}
                     <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-gray-400/20 text-gray-100 border border-gray-400/30">
                         Tidak Diketahui
@@ -149,6 +157,18 @@
             <div class="sm:col-span-2">
                 <p class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Alamat</p>
                 <p class="mt-1 text-gray-900 dark:text-gray-100 text-sm">{{ cert.alamat }}</p>
+            </div>
+            {% endif %}
+
+            {% if cert.p3dn_search_last_seen %}
+            <div>
+                <p class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Terakhir di P3DN</p>
+                <p class="mt-1 text-gray-900 dark:text-gray-100">
+                    {{ cert.p3dn_search_last_seen.strftime('%d %B %Y') }}
+                    {% if validity_label == 'p3dn_not_found' %}
+                    <span class="ml-1 text-xs text-orange-600 dark:text-orange-400">(tidak muncul saat ini)</span>
+                    {% endif %}
+                </p>
             </div>
             {% endif %}
         </div>
