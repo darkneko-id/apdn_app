@@ -12,7 +12,12 @@ from typing import Any
 import httpx
 from bs4 import BeautifulSoup, Tag
 
-from .constants import DEFAULT_USER_AGENT, P3DN_BASE_URL, P3DN_SEARCH_URL
+from .constants import (
+    DEFAULT_USER_AGENT,
+    P3DN_BASE_URL,
+    P3DN_SEARCH_DETAIL_FETCH_CONCURRENCY,
+    P3DN_SEARCH_URL,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -34,17 +39,28 @@ _HEADER_ALIASES: dict[str, str] = {
 }
 
 
-def _detect_columns(header_row: Tag) -> dict[str, int]:
-    """Map field names to column indices from a table header row."""
-    col_map: dict[str, int] = {}
-    cells = header_row.find_all(["th", "td"])
-    for i, cell in enumerate(cells):
-        text = cell.get_text(strip=True).lower()
-        for alias, field in _HEADER_ALIASES.items():
-            if alias in text and field not in col_map:
-                col_map[field] = i
-                break
-    return col_map
+def _detect_columns(rows: list[Tag]) -> tuple[dict[str, int], int]:
+    """Scan the first few rows for a recognizable header.
+
+    Returns (col_map, first_data_row_index). col_map may be empty if no
+    recognizable header is found — callers should fall back to positional parsing.
+    """
+    for i, row in enumerate(rows[:4]):  # scan up to 4 rows for header
+        col_map: dict[str, int] = {}
+        cells = row.find_all(["th", "td"])
+        for j, cell in enumerate(cells):
+            text = cell.get_text(strip=True).lower()
+            for alias, field in _HEADER_ALIASES.items():
+                if alias in text and field not in col_map:
+                    col_map[field] = j
+                    break
+        # Require at least 2 distinct field matches before treating a row as the
+        # header — a single match (e.g. a product name that happens to contain
+        # "produk") can otherwise misidentify a data row as the header and skip
+        # every real data row that follows it.
+        if "nama_produk" in col_map and len(col_map) >= 2:
+            return col_map, i + 1  # data starts after header row
+    return {}, 1  # no header found; data likely starts at row 1
 
 
 def _get_col(texts: list[str], col_map: dict[str, int], field: str) -> str | None:
@@ -68,21 +84,18 @@ async def scrape_p3dn_search(
     headers = {"User-Agent": DEFAULT_USER_AGENT}
     results: list[dict[str, Any]] = []
     page = 1
-    next_path: str | None = None
+    base_params = {"where": "perush", "what": company_name}
 
     async with httpx.AsyncClient(
         follow_redirects=True, timeout=30, verify=verify_ssl
     ) as client:
         while page <= 20:  # safety pagination guard
-            if next_path:
-                url = P3DN_BASE_URL + "/" + next_path.lstrip("/")
-                r = await client.get(url, headers=headers)
-            else:
-                r = await client.get(
-                    P3DN_SEARCH_URL,
-                    params={"where": "perush", "what": company_name},
-                    headers=headers,
-                )
+            # Always re-issue the original search params plus the page number —
+            # following a bare href from the page (e.g. "search.php?hal=2") can
+            # drop the where/what filter if P3DN's pagination links omit it,
+            # causing unfiltered results to be attributed to this company.
+            params = dict(base_params) if page == 1 else {**base_params, "hal": str(page)}
+            r = await client.get(P3DN_SEARCH_URL, params=params, headers=headers)
 
             r.raise_for_status()
             soup = BeautifulSoup(r.text, "lxml")
@@ -94,9 +107,59 @@ async def scrape_p3dn_search(
             if len(all_rows) < 2:
                 break
 
-            col_map = _detect_columns(all_rows[0])
+            col_map, data_start = _detect_columns(all_rows)
 
-            for row in all_rows[1:]:
+            # Positional fallback when header detection fails.
+            # Common P3DN search.php layout (based on observed bulk export format):
+            #   0=No, 1=Perusahaan, 2=Produk, 3=Spesifikasi, 4=Nilai TKDN, 5=Berlaku, 6=Aksi
+            # OR (with kelompok column):
+            #   0=No, 1=Perusahaan, 2=Kelompok, 3=Produk, 4=Spesifikasi, 5=Nilai TKDN
+            # We pick the one that produces a non-empty produk from the first data row.
+            if not col_map:
+                first_data = all_rows[data_start] if data_start < len(all_rows) else None
+                if first_data:
+                    cells = [td.get_text(strip=True) for td in first_data.find_all("td")]
+                    # Heuristic: find the first column that looks like a TKDN% (float 0-100)
+                    tkdn_col: int | None = None
+                    for ci, v in enumerate(cells):
+                        try:
+                            val = float(v.replace(",", ".").replace("%", "").strip())
+                            if 0.0 <= val <= 100.0 and ci > 1:
+                                tkdn_col = ci
+                                break
+                        except ValueError:
+                            pass
+                    if tkdn_col is not None:
+                        # Assume col 1=company. Only assign produk/spesifikasi to columns
+                        # that exist and don't collide with tkdn_col or each other.
+                        if tkdn_col - 2 >= 2:
+                            # room for company, produk, spec before the tkdn column
+                            col_map = {
+                                "nama_perusahaan": 1,
+                                "nama_produk": tkdn_col - 2,
+                                "spesifikasi": tkdn_col - 1,
+                                "nilai_tkdn": tkdn_col,
+                            }
+                        elif tkdn_col - 1 >= 2:
+                            # only room for produk; no distinct spec column
+                            col_map = {
+                                "nama_perusahaan": 1,
+                                "nama_produk": tkdn_col - 1,
+                                "nilai_tkdn": tkdn_col,
+                            }
+                        if col_map:
+                            logger.info(
+                                "P3DN column detection used heuristic fallback (tkdn_col=%d): %s",
+                                tkdn_col, col_map,
+                            )
+                    else:
+                        logger.warning(
+                            "P3DN column detection failed for company=%r; "
+                            "no TKDN-like column found. Row sample: %s",
+                            company_name, cells[:8],
+                        )
+
+            for row in all_rows[data_start:]:
                 cells = row.find_all("td")
                 if len(cells) < 2:
                     continue
@@ -114,6 +177,10 @@ async def scrape_p3dn_search(
 
                 produk = _get_col(texts, col_map, "nama_produk")
                 if not produk:
+                    logger.debug(
+                        "Skipping P3DN row with empty produk (page=%d col_map=%s): %s",
+                        page, col_map, texts[:6],
+                    )
                     continue
 
                 tkdn_str = _get_col(texts, col_map, "nilai_tkdn") or ""
@@ -135,22 +202,25 @@ async def scrape_p3dn_search(
                     "detail_url": detail_url,
                 })
 
-            # Find next page link
+            # Find next page link by looking for hal=N in href.
+            # Avoid prefix matches: "hal=2" must not match "hal=20".
             next_link: str | None = None
+            target_hal = f"hal={page + 1}"
             for a in soup.find_all("a", href=True):
                 if not isinstance(a, Tag):
                     continue
                 href = str(a.get("href", ""))
-                if "hal=" in href:
-                    txt = a.get_text(strip=True)
-                    if txt.isdigit() and int(txt) == page + 1:
-                        next_link = href
-                        break
+                idx = href.find(target_hal)
+                if idx == -1:
+                    continue
+                after = href[idx + len(target_hal):]
+                if not after or not after[0].isdigit():
+                    next_link = href
+                    break
 
             if not next_link:
                 break
 
-            next_path = next_link
             page += 1
             await asyncio.sleep(delay_seconds)
 
@@ -217,18 +287,26 @@ def upsert_p3dn_rows(
             stats["skipped"] += 1
             continue
 
-        # Match existing rows by (company, product, spec) with fuzzy tkdn tolerance
+        # Match existing rows by (company, product, spec) with fuzzy tkdn tolerance.
+        # nama_produk/spesifikasi are compared case/whitespace-insensitively since
+        # P3DN's search.php and bulk export format the same text differently
+        # (e.g. extra spaces, different casing) — an exact match would otherwise
+        # miss the row and create a spurious duplicate.
         if nilai_tkdn is not None:
             existing = conn.execute(
                 """SELECT id FROM tkdn_certificate
-                   WHERE nama_perusahaan = ? AND nama_produk = ? AND spesifikasi = ?
+                   WHERE nama_perusahaan = ?
+                     AND LOWER(TRIM(nama_produk)) = LOWER(TRIM(?))
+                     AND LOWER(TRIM(spesifikasi)) = LOWER(TRIM(?))
                      AND ABS(COALESCE(nilai_tkdn, -999) - ?) < 0.5""",
                 (db_company_name, produk, spec, nilai_tkdn),
             ).fetchall()
         else:
             existing = conn.execute(
                 """SELECT id FROM tkdn_certificate
-                   WHERE nama_perusahaan = ? AND nama_produk = ? AND spesifikasi = ?""",
+                   WHERE nama_perusahaan = ?
+                     AND LOWER(TRIM(nama_produk)) = LOWER(TRIM(?))
+                     AND LOWER(TRIM(spesifikasi)) = LOWER(TRIM(?))""",
                 (db_company_name, produk, spec),
             ).fetchall()
 
@@ -267,6 +345,24 @@ def upsert_p3dn_rows(
                 )
                 stats["skipped"] += 1
 
+    # After processing all scraped rows, mark records of this company that were NOT
+    # found in this scrape (p3dn_search_last_seen not updated to today).
+    # Only do this when the scrape returned results — empty scrapes should not
+    # mark existing records as absent.
+    if rows:
+        conn.execute(
+            "UPDATE tkdn_certificate SET p3dn_not_found_since = ? "
+            "WHERE nama_perusahaan = ? "
+            "  AND (p3dn_search_last_seen IS NULL OR p3dn_search_last_seen != ?) "
+            "  AND p3dn_not_found_since IS NULL",
+            (today_str, db_company_name, today_str),
+        )
+        conn.execute(
+            "UPDATE tkdn_certificate SET p3dn_not_found_since = NULL "
+            "WHERE nama_perusahaan = ? AND p3dn_search_last_seen = ?",
+            (db_company_name, today_str),
+        )
+
     conn.commit()
     return stats
 
@@ -286,18 +382,27 @@ async def scrape_and_import_p3dn(
     if not rows:
         return {"updated": 0, "inserted": 0, "skipped": 0}
 
-    # Enrich with alamat from detail pages (deduplicated by URL)
-    seen_urls: set[str] = set()
-    async with httpx.AsyncClient(
-        follow_redirects=True, timeout=30, verify=verify_ssl
-    ) as client:
-        for row in rows:
-            detail_url = row.pop("detail_url", None)
-            if detail_url and detail_url not in seen_urls:
-                seen_urls.add(detail_url)
-                detail = await _scrape_p3dn_detail(detail_url, client)
-                if detail.get("alamat") and not row.get("alamat"):
-                    row["alamat"] = detail["alamat"]
-                await asyncio.sleep(delay_seconds)
+    # Enrich with alamat from detail pages, fetched concurrently (bounded) instead
+    # of sequentially — a company with dozens of products would otherwise block
+    # the request for tens of seconds (one GET + sleep per unique detail URL).
+    detail_urls = [row.pop("detail_url", None) for row in rows]
+    unique_urls = {u for u in detail_urls if u}
+
+    if unique_urls:
+        semaphore = asyncio.Semaphore(P3DN_SEARCH_DETAIL_FETCH_CONCURRENCY)
+        details: dict[str, dict[str, Any]] = {}
+
+        async def _fetch(client: httpx.AsyncClient, url: str) -> None:
+            async with semaphore:
+                details[url] = await _scrape_p3dn_detail(url, client)
+
+        async with httpx.AsyncClient(
+            follow_redirects=True, timeout=30, verify=verify_ssl
+        ) as client:
+            await asyncio.gather(*(_fetch(client, u) for u in unique_urls))
+
+        for row, detail_url in zip(rows, detail_urls):
+            if detail_url and details.get(detail_url, {}).get("alamat") and not row.get("alamat"):
+                row["alamat"] = details[detail_url]["alamat"]
 
     return upsert_p3dn_rows(conn, db_company_name, rows, today)

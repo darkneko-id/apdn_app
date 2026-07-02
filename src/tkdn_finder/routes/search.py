@@ -238,8 +238,10 @@ async def enrich_tipe_from_search(
             )
 
         today = date.today()
-        tipe_total = {"updated": 0, "inserted": 0}
-        p3dn_total = {"updated": 0, "inserted": 0}
+        tipe_total = {"updated": 0, "inserted": 0, "skipped": 0}
+        p3dn_total = {"updated": 0, "inserted": 0, "skipped": 0}
+        tipe_failed = 0
+        p3dn_failed = 0
 
         for company in companies:
             # 1. Tipe enrichment from tkdn.kemenperin.go.id
@@ -250,7 +252,9 @@ async def enrich_tipe_from_search(
                 stats = enrich_tipe_in_db(conn, company, scraped)
                 tipe_total["updated"] += stats["updated"]
                 tipe_total["inserted"] += stats["inserted"]
+                tipe_total["skipped"] += stats.get("skipped", 0)
             except Exception as exc:
+                tipe_failed += 1
                 logger.warning("Enrich Tipe failed for %r: %s", company, exc)
 
             # 2. P3DN product import from p3dn.kemenperin.go.id
@@ -260,7 +264,9 @@ async def enrich_tipe_from_search(
                 )
                 p3dn_total["updated"] += stats["updated"]
                 p3dn_total["inserted"] += stats["inserted"]
+                p3dn_total["skipped"] += stats.get("skipped", 0)
             except Exception as exc:
+                p3dn_failed += 1
                 logger.warning("P3DN import failed for %r: %s", company, exc)
 
     except Exception as exc:
@@ -280,10 +286,16 @@ async def enrich_tipe_from_search(
         parts.append(f'P3DN: {p3dn_total["inserted"]} produk baru diimpor')
     if p3dn_total["updated"] and not p3dn_total["inserted"]:
         parts.append(f'P3DN: {p3dn_total["updated"]} baris dicek')
+    skipped_total = tipe_total["skipped"] + p3dn_total["skipped"]
+    if skipped_total:
+        parts.append(f'{skipped_total} baris dilewati')
+    if tipe_failed or p3dn_failed:
+        parts.append(f'{tipe_failed + p3dn_failed} perusahaan gagal di-scrape')
     summary = " | ".join(parts) if parts else "Tidak ada perubahan"
+    text_color = "text-amber-600" if (tipe_failed or p3dn_failed) else "text-green-700"
 
     return HTMLResponse(
-        f'<span class="text-xs text-green-700">'
+        f'<span class="text-xs {text_color}">'
         f'{summary} ({len(companies)} perusahaan). Refresh hasil untuk melihat perubahan.'
         f'</span>'
     )
