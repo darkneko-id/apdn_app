@@ -34,17 +34,24 @@ _HEADER_ALIASES: dict[str, str] = {
 }
 
 
-def _detect_columns(header_row: Tag) -> dict[str, int]:
-    """Map field names to column indices from a table header row."""
-    col_map: dict[str, int] = {}
-    cells = header_row.find_all(["th", "td"])
-    for i, cell in enumerate(cells):
-        text = cell.get_text(strip=True).lower()
-        for alias, field in _HEADER_ALIASES.items():
-            if alias in text and field not in col_map:
-                col_map[field] = i
-                break
-    return col_map
+def _detect_columns(rows: list[Tag]) -> tuple[dict[str, int], int]:
+    """Scan the first few rows for a recognizable header.
+
+    Returns (col_map, first_data_row_index). col_map may be empty if no
+    recognizable header is found — callers should fall back to positional parsing.
+    """
+    for i, row in enumerate(rows[:4]):  # scan up to 4 rows for header
+        col_map: dict[str, int] = {}
+        cells = row.find_all(["th", "td"])
+        for j, cell in enumerate(cells):
+            text = cell.get_text(strip=True).lower()
+            for alias, field in _HEADER_ALIASES.items():
+                if alias in text and field not in col_map:
+                    col_map[field] = j
+                    break
+        if "nama_produk" in col_map:
+            return col_map, i + 1  # data starts after header row
+    return {}, 1  # no header found; data likely starts at row 1
 
 
 def _get_col(texts: list[str], col_map: dict[str, int], field: str) -> str | None:
@@ -94,9 +101,48 @@ async def scrape_p3dn_search(
             if len(all_rows) < 2:
                 break
 
-            col_map = _detect_columns(all_rows[0])
+            col_map, data_start = _detect_columns(all_rows)
 
-            for row in all_rows[1:]:
+            # Positional fallback when header detection fails.
+            # Common P3DN search.php layout (based on observed bulk export format):
+            #   0=No, 1=Perusahaan, 2=Produk, 3=Spesifikasi, 4=Nilai TKDN, 5=Berlaku, 6=Aksi
+            # OR (with kelompok column):
+            #   0=No, 1=Perusahaan, 2=Kelompok, 3=Produk, 4=Spesifikasi, 5=Nilai TKDN
+            # We pick the one that produces a non-empty produk from the first data row.
+            if not col_map:
+                first_data = all_rows[data_start] if data_start < len(all_rows) else None
+                if first_data:
+                    cells = [td.get_text(strip=True) for td in first_data.find_all("td")]
+                    # Heuristic: find the first column that looks like a TKDN% (float 0-100)
+                    tkdn_col: int | None = None
+                    for ci, v in enumerate(cells):
+                        try:
+                            val = float(v.replace(",", ".").replace("%", "").strip())
+                            if 0.0 <= val <= 100.0 and ci > 1:
+                                tkdn_col = ci
+                                break
+                        except ValueError:
+                            pass
+                    if tkdn_col is not None:
+                        # Assume: col 1=company, col (tkdn-1)=spec, col (tkdn-2)=produk (min col 2)
+                        col_map = {
+                            "nama_perusahaan": 1,
+                            "nama_produk": max(2, tkdn_col - 2),
+                            "spesifikasi": max(3, tkdn_col - 1) if tkdn_col > 2 else tkdn_col,
+                            "nilai_tkdn": tkdn_col,
+                        }
+                        logger.info(
+                            "P3DN column detection used heuristic fallback (tkdn_col=%d): %s",
+                            tkdn_col, col_map,
+                        )
+                    else:
+                        logger.warning(
+                            "P3DN column detection failed for company=%r; "
+                            "no TKDN-like column found. Row sample: %s",
+                            company_name, cells[:8],
+                        )
+
+            for row in all_rows[data_start:]:
                 cells = row.find_all("td")
                 if len(cells) < 2:
                     continue
