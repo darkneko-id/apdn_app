@@ -80,9 +80,13 @@ def compute_validity_label(cert: CertificateRow, today: date, expiring_soon_days
         if (cert.masa_berlaku_akhir - today).days <= expiring_soon_days:
             return "expiring"
         return "valid"
-    # No masa_berlaku_akhir — check P3DN tracking
+    # No masa_berlaku_akhir — check P3DN tracking. p3dn_not_found_since is the
+    # authoritative absence flag (cleared on the scrape that finds the record
+    # again), so it takes priority over comparing p3dn_search_last_seen to today.
+    if cert.p3dn_not_found_since is not None:
+        return "p3dn_not_found"
     if cert.p3dn_search_last_seen is not None:
-        return "p3dn_active" if cert.p3dn_search_last_seen >= today else "p3dn_not_found"
+        return "p3dn_active"
     return "unknown"
 
 

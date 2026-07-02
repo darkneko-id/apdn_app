@@ -6,11 +6,12 @@ import sqlite3
 from datetime import date
 from typing import Any
 
+import httpx
 import pytest
 from bs4 import BeautifulSoup
 
 from tkdn_finder.merger import merge_and_upsert
-from tkdn_finder.p3dn_search_scraper import upsert_p3dn_rows
+from tkdn_finder.p3dn_search_scraper import scrape_p3dn_search, upsert_p3dn_rows
 
 
 def _find_next_page_link(html: str, page: int) -> str | None:
@@ -56,6 +57,106 @@ class TestPaginationDetection:
         <a href="search.php?hal=4">4</a>
         """
         assert _find_next_page_link(html, 3) == "search.php?hal=4"
+
+
+class _FakeResponse:
+    def __init__(self, html: str) -> None:
+        self.text = html
+
+    def raise_for_status(self) -> None:
+        pass
+
+
+class TestScrapePaginationPreservesSearchParams:
+    async def test_page_2_request_carries_original_where_what(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Page 2+ must re-send where/what — following a bare href like
+        'search.php?hal=2' would silently drop the company filter."""
+        page1_html = """
+        <table>
+          <tr><th>Perusahaan</th><th>Produk</th><th>Spesifikasi</th><th>Nilai TKDN</th></tr>
+          <tr><td>PT X</td><td>Produk A</td><td>Spec A</td><td>10.00</td></tr>
+        </table>
+        <a href="search.php?hal=2">Selanjutnya &raquo;</a>
+        """
+        page2_html = """
+        <table>
+          <tr><th>Perusahaan</th><th>Produk</th><th>Spesifikasi</th><th>Nilai TKDN</th></tr>
+          <tr><td>PT X</td><td>Produk B</td><td>Spec B</td><td>20.00</td></tr>
+        </table>
+        """
+        responses = [page1_html, page2_html]
+        calls: list[dict[str, str] | None] = []
+
+        async def fake_get(
+            self: httpx.AsyncClient, url: str, params: dict[str, str] | None = None, **kwargs: Any
+        ) -> _FakeResponse:
+            calls.append(params)
+            return _FakeResponse(responses.pop(0))
+
+        monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+
+        rows = await scrape_p3dn_search("PT X", delay_seconds=0)
+
+        assert len(calls) == 2
+        assert calls[0] == {"where": "perush", "what": "PT X"}
+        assert calls[1] == {"where": "perush", "what": "PT X", "hal": "2"}
+        assert len(rows) == 2
+
+
+class TestColumnFallbackNoCollision:
+    async def test_no_spec_column_does_not_map_spesifikasi_to_tkdn_value(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Layout with no distinct spec column (0=No,1=Perusahaan,2=Produk,3=TKDN):
+        the fallback must not read spesifikasi from the TKDN column itself."""
+        html = """
+        <table>
+          <tr><th>No</th><th>Nama PT</th><th>Barang</th><th>Persentase</th></tr>
+          <tr><td>1</td><td>PT X</td><td>Produk A</td><td>58.30</td></tr>
+        </table>
+        """
+
+        async def fake_get(
+            self: httpx.AsyncClient, url: str, params: dict[str, str] | None = None, **kwargs: Any
+        ) -> _FakeResponse:
+            return _FakeResponse(html)
+
+        monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+
+        rows = await scrape_p3dn_search("PT X", delay_seconds=0)
+
+        assert len(rows) == 1
+        assert rows[0]["nama_produk"] == "Produk A"
+        assert rows[0]["nilai_tkdn"] == 58.30
+        assert rows[0]["spesifikasi"] == ""
+
+    async def test_data_row_with_produk_like_text_not_mistaken_for_header(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A single accidental alias match (product name containing 'produk')
+        must not cause _detect_columns to treat a data row as the header and
+        skip every real data row after it."""
+        html = """
+        <table>
+          <tr><th>No</th><th>Nama PT</th><th>Barang</th><th>Persentase</th></tr>
+          <tr><td>1</td><td>PT X</td><td>Produk Andalan</td><td>58.30</td></tr>
+          <tr><td>2</td><td>PT X</td><td>Produk Lainnya</td><td>40.00</td></tr>
+        </table>
+        """
+
+        async def fake_get(
+            self: httpx.AsyncClient, url: str, params: dict[str, str] | None = None, **kwargs: Any
+        ) -> _FakeResponse:
+            return _FakeResponse(html)
+
+        monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+
+        rows = await scrape_p3dn_search("PT X", delay_seconds=0)
+
+        assert len(rows) == 2
+        assert {r["nama_produk"] for r in rows} == {"Produk Andalan", "Produk Lainnya"}
 
 
 TODAY = date(2026, 6, 25)
@@ -275,3 +376,52 @@ class TestUpsertP3dnRowsNotFoundMarking:
         other_valve = _fetch_one(db, nama_produk="Valve")
         assert other_valve is not None
         assert other_valve["p3dn_not_found_since"] is None
+
+    def test_first_absence_date_is_preserved_across_repeated_scrapes(
+        self, db: sqlite3.Connection, cert_factory: Any
+    ) -> None:
+        """p3dn_not_found_since must pin the FIRST confirmed-absent date, not
+        reset forward every time the record is still missing."""
+        merge_and_upsert(db, [cert_factory(nama_produk="Gate Valve", nilai_tkdn=30.0, tipe="")])
+
+        upsert_p3dn_rows(
+            db, "PT Test Corp",
+            [{"nama_produk": "Check Valve", "spesifikasi": "", "nilai_tkdn": 35.0}],
+            date(2026, 6, 25),
+        )
+        first = _fetch_one(db, nama_produk="Gate Valve")
+        assert first is not None
+        assert first["p3dn_not_found_since"] == "2026-06-25"
+
+        # Still absent a week later — the original date must not be overwritten
+        upsert_p3dn_rows(
+            db, "PT Test Corp",
+            [{"nama_produk": "Check Valve", "spesifikasi": "", "nilai_tkdn": 35.0}],
+            date(2026, 7, 2),
+        )
+        second = _fetch_one(db, nama_produk="Gate Valve")
+        assert second is not None
+        assert second["p3dn_not_found_since"] == "2026-06-25"
+
+
+class TestUpsertP3dnRowsNormalizedMatching:
+    def test_matches_despite_whitespace_and_case_differences(
+        self, db: sqlite3.Connection, cert_factory: Any
+    ) -> None:
+        """Scraped text often differs in case/whitespace from the bulk-export
+        text for the same certificate; matching must not create a duplicate."""
+        merge_and_upsert(db, [cert_factory(
+            nama_produk="Seamless Pipe",
+            spesifikasi="6 inch 200 GPM",
+            nilai_tkdn=10.29,
+            tipe="",
+        )])
+
+        stats = upsert_p3dn_rows(
+            db, "PT Test Corp",
+            [{"nama_produk": "seamless pipe", "spesifikasi": " 6 INCH 200 gpm ", "nilai_tkdn": 10.29}],
+            TODAY,
+        )
+
+        assert stats["inserted"] == 0
+        assert _count(db) == 1
