@@ -313,6 +313,23 @@ def upsert_p3dn_rows(
                 )
                 stats["skipped"] += 1
 
+    # After processing all scraped rows, mark records of this company that were NOT
+    # found in this scrape (p3dn_search_last_seen not updated to today).
+    # Only do this when the scrape returned results — empty scrapes should not
+    # mark existing records as absent.
+    if rows:
+        conn.execute(
+            "UPDATE tkdn_certificate SET p3dn_not_found_since = ? "
+            "WHERE nama_perusahaan = ? "
+            "  AND (p3dn_search_last_seen IS NULL OR p3dn_search_last_seen != ?)",
+            (today_str, db_company_name, today_str),
+        )
+        conn.execute(
+            "UPDATE tkdn_certificate SET p3dn_not_found_since = NULL "
+            "WHERE nama_perusahaan = ? AND p3dn_search_last_seen = ?",
+            (db_company_name, today_str),
+        )
+
     conn.commit()
     return stats
 

@@ -26,6 +26,7 @@ class CertificateRow(BaseModel):
     masa_berlaku_akhir: date | None = None
     tahun_sumber: int | None = None
     p3dn_search_last_seen: date | None = None
+    p3dn_not_found_since: date | None = None
     is_valid: bool = False
     score: float | None = None
 
@@ -54,13 +55,14 @@ class CertificateRow(BaseModel):
         else:
             d["is_valid"] = False
 
-        # Parse p3dn_search_last_seen
-        p3dn_last = d.get("p3dn_search_last_seen")
-        if isinstance(p3dn_last, str) and p3dn_last:
-            try:
-                d["p3dn_search_last_seen"] = date.fromisoformat(p3dn_last)
-            except ValueError:
-                d["p3dn_search_last_seen"] = None
+        # Parse date-string columns
+        for date_col in ("p3dn_search_last_seen", "p3dn_not_found_since"):
+            val = d.get(date_col)
+            if isinstance(val, str) and val:
+                try:
+                    d[date_col] = date.fromisoformat(val)
+                except ValueError:
+                    d[date_col] = None
 
         # Remove score from DB dict (it may be added separately)
         d.setdefault("score", None)

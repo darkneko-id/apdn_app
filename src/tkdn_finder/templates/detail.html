@@ -170,6 +170,16 @@
                     {% endif %}
                 </p>
             </div>
+            {% elif cert.p3dn_not_found_since %}
+            <div>
+                <p class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Status P3DN</p>
+                <p class="mt-1 text-sm text-orange-600 dark:text-orange-400">
+                    Tidak ditemukan di pencarian P3DN
+                    <span class="block text-xs text-gray-400 dark:text-gray-600 mt-0.5">
+                        Dikonfirmasi sejak {{ cert.p3dn_not_found_since.strftime('%d %B %Y') }}
+                    </span>
+                </p>
+            </div>
             {% endif %}
         </div>
 

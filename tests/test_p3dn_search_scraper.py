@@ -139,3 +139,93 @@ class TestUpsertP3dnRowsIdempotent:
         row = _fetch_one(db, nama_produk="Pipa ERW")
         assert row is not None
         assert row["p3dn_search_last_seen"] == TODAY_STR
+
+
+class TestUpsertP3dnRowsNotFoundMarking:
+    def test_absent_record_marked_p3dn_not_found_since(
+        self, db: sqlite3.Connection, cert_factory: Any
+    ) -> None:
+        """Record in DB but not in P3DN scrape should get p3dn_not_found_since set."""
+        merge_and_upsert(db, [cert_factory(nama_produk="Gate Valve", nilai_tkdn=30.0, tipe="")])
+
+        # Scrape returns a DIFFERENT product for the same company
+        upsert_p3dn_rows(
+            db, "PT Test Corp",
+            [{"nama_produk": "Check Valve", "spesifikasi": "", "nilai_tkdn": 35.0}],
+            TODAY,
+        )
+
+        gate_valve = _fetch_one(db, nama_produk="Gate Valve")
+        assert gate_valve is not None
+        assert gate_valve["p3dn_not_found_since"] == TODAY_STR
+
+        check_valve = _fetch_one(db, nama_produk="Check Valve")
+        assert check_valve is not None
+        assert check_valve["p3dn_not_found_since"] is None
+
+    def test_found_record_clears_p3dn_not_found_since(
+        self, db: sqlite3.Connection
+    ) -> None:
+        """A record marked as absent should be cleared when found again."""
+        # First scrape: Pipa A found, Pipa B not found
+        upsert_p3dn_rows(
+            db, "PT Test Corp",
+            [
+                {"nama_produk": "Pipa A", "spesifikasi": "", "nilai_tkdn": 40.0},
+                {"nama_produk": "Pipa B", "spesifikasi": "", "nilai_tkdn": 50.0},
+            ],
+            date(2026, 6, 24),
+        )
+        upsert_p3dn_rows(
+            db, "PT Test Corp",
+            [{"nama_produk": "Pipa A", "spesifikasi": "", "nilai_tkdn": 40.0}],
+            date(2026, 6, 25),
+        )
+        pipa_b = _fetch_one(db, nama_produk="Pipa B")
+        assert pipa_b is not None
+        assert pipa_b["p3dn_not_found_since"] == "2026-06-25"
+
+        # Second scrape: both found — Pipa B's not_found_since should be cleared
+        upsert_p3dn_rows(
+            db, "PT Test Corp",
+            [
+                {"nama_produk": "Pipa A", "spesifikasi": "", "nilai_tkdn": 40.0},
+                {"nama_produk": "Pipa B", "spesifikasi": "", "nilai_tkdn": 50.0},
+            ],
+            TODAY,
+        )
+        pipa_b_after = _fetch_one(db, nama_produk="Pipa B")
+        assert pipa_b_after is not None
+        assert pipa_b_after["p3dn_not_found_since"] is None
+        assert pipa_b_after["p3dn_search_last_seen"] == TODAY_STR
+
+    def test_absent_record_not_marked_when_scrape_returns_empty(
+        self, db: sqlite3.Connection, cert_factory: Any
+    ) -> None:
+        """Empty scrape result should not mark any records as absent."""
+        merge_and_upsert(db, [cert_factory(nama_produk="Gate Valve", nilai_tkdn=30.0, tipe="")])
+
+        # upsert_p3dn_rows with empty list (would only be called if scrape succeeded)
+        upsert_p3dn_rows(db, "PT Test Corp", [], TODAY)
+
+        gate_valve = _fetch_one(db, nama_produk="Gate Valve")
+        assert gate_valve is not None
+        assert gate_valve["p3dn_not_found_since"] is None
+
+    def test_other_company_records_not_affected(
+        self, db: sqlite3.Connection, cert_factory: Any
+    ) -> None:
+        """p3dn_not_found_since marking must not cross company boundaries."""
+        merge_and_upsert(db, [cert_factory(
+            nama_perusahaan="PT Other Corp", nama_produk="Valve", nilai_tkdn=25.0, tipe=""
+        )])
+
+        upsert_p3dn_rows(
+            db, "PT Test Corp",
+            [{"nama_produk": "Pump", "spesifikasi": "", "nilai_tkdn": 40.0}],
+            TODAY,
+        )
+
+        other_valve = _fetch_one(db, nama_produk="Valve")
+        assert other_valve is not None
+        assert other_valve["p3dn_not_found_since"] is None
