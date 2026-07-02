@@ -160,6 +160,10 @@ async def scrape_p3dn_search(
 
                 produk = _get_col(texts, col_map, "nama_produk")
                 if not produk:
+                    logger.debug(
+                        "Skipping P3DN row with empty produk (page=%d col_map=%s): %s",
+                        page, col_map, texts[:6],
+                    )
                     continue
 
                 tkdn_str = _get_col(texts, col_map, "nilai_tkdn") or ""
@@ -181,17 +185,21 @@ async def scrape_p3dn_search(
                     "detail_url": detail_url,
                 })
 
-            # Find next page link
+            # Find next page link by looking for hal=N in href.
+            # Avoid prefix matches: "hal=2" must not match "hal=20".
             next_link: str | None = None
+            target_hal = f"hal={page + 1}"
             for a in soup.find_all("a", href=True):
                 if not isinstance(a, Tag):
                     continue
                 href = str(a.get("href", ""))
-                if "hal=" in href:
-                    txt = a.get_text(strip=True)
-                    if txt.isdigit() and int(txt) == page + 1:
-                        next_link = href
-                        break
+                idx = href.find(target_hal)
+                if idx == -1:
+                    continue
+                after = href[idx + len(target_hal):]
+                if not after or not after[0].isdigit():
+                    next_link = href
+                    break
 
             if not next_link:
                 break

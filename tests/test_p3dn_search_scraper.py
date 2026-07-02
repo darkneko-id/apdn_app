@@ -1,4 +1,4 @@
-"""Tests for p3dn_search_scraper.py — upsert_p3dn_rows logic."""
+"""Tests for p3dn_search_scraper.py — upsert_p3dn_rows logic and pagination."""
 
 from __future__ import annotations
 
@@ -7,9 +7,55 @@ from datetime import date
 from typing import Any
 
 import pytest
+from bs4 import BeautifulSoup
 
 from tkdn_finder.merger import merge_and_upsert
 from tkdn_finder.p3dn_search_scraper import upsert_p3dn_rows
+
+
+def _find_next_page_link(html: str, page: int) -> str | None:
+    """Mirror the pagination detection logic from scrape_p3dn_search."""
+    soup = BeautifulSoup(html, "lxml")
+    target_hal = f"hal={page + 1}"
+    for a in soup.find_all("a", href=True):
+        href = str(a.get("href", ""))
+        idx = href.find(target_hal)
+        if idx == -1:
+            continue
+        after = href[idx + len(target_hal):]
+        if not after or not after[0].isdigit():
+            return href
+    return None
+
+
+class TestPaginationDetection:
+    def test_finds_numbered_link(self) -> None:
+        html = '<a href="search.php?hal=2">2</a>'
+        assert _find_next_page_link(html, 1) is not None
+
+    def test_finds_next_arrow_link(self) -> None:
+        """A 'Next »' button with hal=2 in href should be detected even without digit text."""
+        html = '<a href="search.php?hal=2">Selanjutnya &raquo;</a>'
+        assert _find_next_page_link(html, 1) is not None
+
+    def test_does_not_match_hal_prefix(self) -> None:
+        """hal=2 must not match when href contains hal=20 (only)."""
+        html = '<a href="search.php?hal=20">20</a>'
+        assert _find_next_page_link(html, 1) is None
+
+    def test_returns_none_on_last_page(self) -> None:
+        """No link for page+1 should return None, ending pagination."""
+        html = '<a href="search.php?hal=3">3</a>'
+        assert _find_next_page_link(html, 4) is None
+
+    def test_finds_link_among_multiple_pagination_anchors(self) -> None:
+        html = """
+        <a href="search.php?hal=1">1</a>
+        <a href="search.php?hal=2">2</a>
+        <span>3</span>
+        <a href="search.php?hal=4">4</a>
+        """
+        assert _find_next_page_link(html, 3) == "search.php?hal=4"
 
 
 TODAY = date(2026, 6, 25)
