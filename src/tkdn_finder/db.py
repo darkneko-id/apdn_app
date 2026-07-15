@@ -205,6 +205,54 @@ def get_stats(conn: sqlite3.Connection) -> dict[str, Any]:
     }
 
 
+def save_year_count_snapshots(conn: sqlite3.Connection, snapshot_date: str) -> None:
+    """Record today's deduped certificate count per tahun_sumber.
+
+    At most one snapshot per (tahun_sumber, snapshot_date) — re-running on the
+    same day overwrites that day's count rather than adding a new point.
+    """
+    conn.execute(
+        """
+        INSERT INTO year_count_snapshot (snapshot_date, tahun_sumber, cert_count)
+        SELECT ?, tahun_sumber, COUNT(*)
+        FROM tkdn_certificate
+        WHERE tahun_sumber IS NOT NULL
+        GROUP BY tahun_sumber
+        ON CONFLICT(tahun_sumber, snapshot_date) DO UPDATE SET
+            cert_count = excluded.cert_count
+        """,
+        (snapshot_date,),
+    )
+    conn.commit()
+
+
+def get_year_count_trends(conn: sqlite3.Connection, limit_per_year: int = 90) -> dict[int, list[sqlite3.Row]]:
+    """Return up to `limit_per_year` most recent snapshots per year, oldest first.
+
+    Result is a dict keyed by tahun_sumber, ordered by year descending
+    (newest dataset year first) to match the "Data per Tahun" stats card.
+    """
+    cursor = conn.execute(
+        """
+        SELECT tahun_sumber, snapshot_date, cert_count
+        FROM (
+            SELECT tahun_sumber, snapshot_date, cert_count,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY tahun_sumber ORDER BY snapshot_date DESC
+                   ) AS rn
+            FROM year_count_snapshot
+        )
+        WHERE rn <= ?
+        ORDER BY tahun_sumber DESC, snapshot_date ASC
+        """,
+        (limit_per_year,),
+    )
+    trends: dict[int, list[sqlite3.Row]] = {}
+    for row in cursor.fetchall():
+        trends.setdefault(row["tahun_sumber"], []).append(row)
+    return trends
+
+
 def get_certificate_by_id(conn: sqlite3.Connection, cert_id: int) -> sqlite3.Row | None:
     """Fetch a single certificate by primary key."""
     cursor = conn.execute(

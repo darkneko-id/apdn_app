@@ -134,3 +134,25 @@ class StatsResponse(BaseModel):
     total_rows: int
     last_refresh: str | None = None
     rows_per_year: dict[str, int] = {}
+
+
+class YearTrendChart(BaseModel):
+    """Precomputed SVG sparkline data for one year's certificate-count trend.
+
+    Points are spaced evenly by index (not by actual elapsed days) — this is
+    a small-multiples trend sparkline, not a precise time-scale axis.
+    """
+
+    tahun: int
+    current: int
+    delta: int | None = None
+    min_count: int
+    max_count: int
+    point_count: int
+    polyline: str = ""
+    last_x: float
+    last_y: float
+    width: int
+    height: int
+    first_date: str | None = None
+    last_date: str | None = None

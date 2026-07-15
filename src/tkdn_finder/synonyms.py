@@ -19,14 +19,17 @@ logger = logging.getLogger(__name__)
 def load_synonyms(conn: sqlite3.Connection) -> dict[str, list[str]]:
     """Load enabled synonyms from the synonym table.
 
-    Returns a dict mapping canonical term to list of variant strings.
+    Returns a dict mapping canonical term (lowercased) to list of variant
+    strings. Keys are lowercased because expand_query matches query phrases
+    via phrase.lower() — without this, canonicals stored with uppercase
+    (e.g. "UPS", "OCTG") would never match.
     """
     cursor = conn.execute(
         "SELECT canonical, variants FROM synonym WHERE enabled = 1"
     )
     result: dict[str, list[str]] = {}
     for row in cursor.fetchall():
-        canonical = row["canonical"]
+        canonical = row["canonical"].lower()
         try:
             variants = json.loads(row["variants"])
             if isinstance(variants, list):

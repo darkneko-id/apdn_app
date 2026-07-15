@@ -55,6 +55,13 @@ FTS_CANDIDATE_LIMIT = 500
 # TKDN value sentinel meaning "not applicable" in the source data
 TKDN_SENTINEL_VALUE = 999.99
 
+# Year-count trend sparklines (Admin page)
+YEAR_TREND_CHART_WIDTH = 260
+YEAR_TREND_CHART_HEIGHT = 56
+YEAR_TREND_CHART_PAD_X = 4
+YEAR_TREND_CHART_PAD_Y = 6
+YEAR_TREND_SNAPSHOT_LIMIT = 90
+
 DEFAULT_SYNONYM_SEEDS: dict[str, list[str]] = {
     # ── Valves ────────────────────────────────────────────────────────────────
     "valve": ["katup", "valv"],
@@ -112,7 +119,6 @@ DEFAULT_SYNONYM_SEEDS: dict[str, list[str]] = {
     "flow meter": ["alat ukur aliran", "flowmeter", "meter aliran", "flow measurement"],
     "pressure gauge": ["pengukur tekanan", "manometer", "pressure indicator", "PI"],
     "transmitter": ["pemancar sinyal", "pressure transmitter", "temperature transmitter"],
-    "level gauge": ["indikator level", "level indicator", "penunjuk level", "level transmitter"],
     "temperature gauge": ["pengukur suhu", "thermometer", "termometer"],
     # ── Mechanical Components ─────────────────────────────────────────────────
     "bearing": ["bantalan", "ball bearing", "roller bearing"],
@@ -185,12 +191,12 @@ DEFAULT_SYNONYM_SEEDS: dict[str, list[str]] = {
     "relay protection": ["relai proteksi", "protection relay", "over current relay", "OCR", "differential relay"],
     "contactor": ["kontaktor", "magnetic contactor", "kontaktor magnetik"],
     # ── Electrical — Metering & Power Quality ────────────────────────────────
-    "energy meter": ["kwh meter", "kWh meter", "meteran listrik", "smart meter", "AMI", "AMR meter"],
+    "energy meter": ["kwh meter", "meteran listrik", "smart meter", "AMI", "AMR meter"],
     "capacitor bank": ["bank kapasitor", "power factor correction", "perbaikan faktor daya", "PFC"],
     "busbar": ["rel busbar", "busbar trunking", "busway", "batang penghantar"],
     "grounding": ["pentanahan", "pembumian", "earthing system", "ground rod"],
     # ── Electrical — Generation ───────────────────────────────────────────────
-    "diesel genset": ["diesel generator set", "generating set", "genset diesel", "diesel genset", "pembangkit diesel"],
+    "diesel genset": ["diesel generator set", "generating set", "genset diesel", "pembangkit diesel"],
     "solar panel": ["panel surya", "modul surya", "PV module", "photovoltaic", "panel fotovoltaik"],
     "inverter": ["inverter solar", "solar inverter", "string inverter", "grid tie inverter"],
     "EV charger": ["SPKLU", "stasiun pengisian kendaraan listrik", "electric vehicle charger", "charging station"],
@@ -234,7 +240,7 @@ DEFAULT_SYNONYM_SEEDS: dict[str, list[str]] = {
     "flow indicator": ["FI", "flow indicator controller", "FIC", "rotameter"],
     # ── Instrumentation — Level ───────────────────────────────────────────────
     "level transmitter": ["LT", "transmiter level", "radar level", "ultrasonic level", "level sensor"],
-    "level gauge": ["gelas penduga", "sight glass", "level glass", "gauge glass"],
+    "level gauge": ["gelas penduga", "sight glass", "level glass", "gauge glass", "indikator level", "level indicator", "penunjuk level"],
     "level switch": ["saklar level", "float switch", "level detector"],
     # ── Instrumentation — Analyzers ───────────────────────────────────────────
     "gas analyzer": ["analisator gas", "gas chromatograph", "GC", "gas detector analyzer"],
@@ -256,4 +262,47 @@ DEFAULT_SYNONYM_SEEDS: dict[str, list[str]] = {
     "biocide": ["biosida", "bahan kimia biocide", "microbicide", "penghambat mikroba"],
     "drilling fluid": ["lumpur bor", "drilling mud", "mud drilling", "oil based mud", "water based mud"],
     "lubricant": ["pelumas", "minyak pelumas", "oli", "grease", "lubrication oil"],
+    # ── Well Equipment — Artificial Lift & Downhole ──────────────────────────
+    "sucker rod pump": ["pompa angguk", "rod pump", "SRP", "pumping unit", "sucker rod"],
+    "progressive cavity pump": ["PCP", "pompa cavity", "screw pump", "pompa ulir"],
+    "packer": ["production packer", "packer sumur", "packer completion"],
+    "drilling rig": ["rig pemboran", "menara bor", "workover rig", "rig service"],
+    # ── Rotating — Turbines ───────────────────────────────────────────────────
+    "gas turbine": ["turbin gas", "gas turbine generator", "GTG"],
+    "steam turbine": ["turbin uap", "steam turbine generator", "STG"],
+    # ── Process & Utility Equipment ───────────────────────────────────────────
+    "flare": ["flare stack", "flare tip", "suar bakar", "flare system"],
+    "metering system": ["metering skid", "sistem metering", "custody metering", "gas metering system", "metering station"],
+    "pressure regulator": ["regulator tekanan", "gas pressure regulator", "regulator gas"],
+    "boiler": ["ketel uap", "steam boiler", "steam generator"],
+    "heater": ["pemanas", "electric heater", "immersion heater", "water bath heater"],
+    "air dryer": ["pengering udara", "desiccant dryer", "refrigerated air dryer"],
+    "air receiver": ["tangki udara", "air receiver tank", "tangki angin"],
+    "nitrogen generator": ["generator nitrogen", "N2 generator", "nitrogen plant"],
+    "water treatment": ["pengolahan air", "WTP", "water treatment plant", "IPAL", "sewage treatment"],
+    "RO membrane": ["membran RO", "reverse osmosis", "membran reverse osmosis"],
+    # ── Piping — Non-metallic ─────────────────────────────────────────────────
+    "GRE pipe": ["pipa GRE", "GRP pipe", "pipa fiberglass", "fiberglass pipe", "FRP pipe", "pipa komposit"],
+    "HDPE pipe": ["pipa HDPE", "pipa polyethylene", "PE pipe", "pipa PE"],
+    "PVC pipe": ["pipa PVC", "pipa paralon", "pipa uPVC"],
+    "hose": ["selang", "hydraulic hose", "selang hidrolik", "rubber hose", "selang industri"],
+    # ── Materials & Fabrication ───────────────────────────────────────────────
+    "steel plate": ["pelat baja", "plat baja", "besi plat", "steel sheet"],
+    "structural steel": ["baja profil", "besi profil", "konstruksi baja", "steel structure", "H beam", "WF beam", "wide flange"],
+    "bolt": ["baut", "mur baut", "baut mur", "fastener", "anchor bolt", "baut angkur"],
+    "wire rope": ["tali kawat baja", "sling", "wire rope sling", "kawat seling"],
+    "welding machine": ["mesin las", "trafo las", "welding inverter"],
+    "welding electrode": ["kawat las", "elektroda las", "welding wire", "filler wire"],
+    # ── Instrumentation — Valves & Fittings ──────────────────────────────────
+    "motor operated valve": ["MOV", "motorized valve", "katup motor", "motorised valve"],
+    "valve positioner": ["positioner", "smart positioner", "pengatur posisi katup"],
+    "instrument tube fitting": ["tube fitting", "instrument tubing", "compression fitting", "ferrule fitting"],
+    "instrument cable": ["kabel instrumen", "kabel instrument", "instrumentation cable", "kabel kontrol", "control cable"],
+    "junction box": ["kotak sambung", "terminal box", "junction box explosion proof", "kotak terminal"],
+    "explosion proof": ["explosion-proof", "flameproof", "tahan ledakan", "Ex proof"],
+    # ── Electrical — Transformers & Switchgear ───────────────────────────────
+    "power transformer": ["trafo daya", "trafo tenaga", "distribution transformer", "trafo distribusi", "oil immersed transformer"],
+    "MV switchgear": ["kubikel", "cubicle", "kubikel tegangan menengah", "MV cubicle", "medium voltage switchgear"],
+    "cable gland": ["gland kabel", "kabel gland", "cable gland explosion proof", "Ex gland"],
+    "terminal block": ["blok terminal", "terminal blok", "terminal strip"],
 }

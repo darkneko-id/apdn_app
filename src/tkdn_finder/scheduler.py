@@ -126,8 +126,16 @@ async def refresh_all_years(settings: Settings, db_path: str) -> None:
             conn.close()
 
     rs.finish()
-    from .db import invalidate_filter_cache
+    from .db import invalidate_filter_cache, save_year_count_snapshots
     invalidate_filter_cache()
+
+    conn = get_connection(db_path)
+    try:
+        save_year_count_snapshots(conn, datetime.now(timezone.utc).date().isoformat())
+    except Exception as exc:
+        logger.exception("Could not save year-count snapshot", extra={"error": str(exc)})
+    finally:
+        conn.close()
 
 
 def create_scheduler(settings: Settings, db_path: str) -> AsyncIOScheduler:

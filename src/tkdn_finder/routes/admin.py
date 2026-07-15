@@ -12,26 +12,33 @@ from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
+from ..charts import build_year_trend_chart
 from ..config import get_settings
+from ..constants import YEAR_TREND_SNAPSHOT_LIMIT
 from ..db import (
     delete_synonym,
     get_connection,
     get_download_runs,
     get_stats,
     get_synonyms_all,
+    get_year_count_trends,
     upsert_synonym,
 )
-from ..models import DownloadRunRow, StatsResponse
+from ..models import DownloadRunRow, StatsResponse, YearTrendChart
 from ..synonyms import load_synonyms
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def _admin_data_sync(db_path: str) -> tuple[dict[str, object], list[sqlite3.Row], list[sqlite3.Row]]:
+def _admin_data_sync(
+    db_path: str,
+) -> tuple[dict[str, object], list[sqlite3.Row], list[sqlite3.Row], list[YearTrendChart]]:
     conn = get_connection(db_path)
     try:
-        return get_stats(conn), get_download_runs(conn, limit=10), get_synonyms_all(conn)
+        trends = get_year_count_trends(conn, limit_per_year=YEAR_TREND_SNAPSHOT_LIMIT)
+        year_trends = [build_year_trend_chart(tahun, rows) for tahun, rows in trends.items()]
+        return get_stats(conn), get_download_runs(conn, limit=10), get_synonyms_all(conn), year_trends
     finally:
         conn.close()
 
@@ -51,7 +58,7 @@ async def admin_page(request: Request) -> HTMLResponse:
     templates: Jinja2Templates = request.app.state.templates
     settings = get_settings()
 
-    stats, runs_raw, synonyms = await asyncio.to_thread(
+    stats, runs_raw, synonyms, year_trends = await asyncio.to_thread(
         _admin_data_sync, settings.get_db_path()
     )
     runs = [DownloadRunRow.from_row(r) for r in runs_raw]
@@ -63,6 +70,7 @@ async def admin_page(request: Request) -> HTMLResponse:
             "stats": stats,
             "download_runs": runs,
             "synonyms": synonyms,
+            "year_trends": year_trends,
         },
     )
 
@@ -99,8 +107,8 @@ def _progress_html(polling: bool = True) -> str:
             f'<div id="refresh-status" class="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg text-sm"'
             f' hx-get="/admin"'
             f' hx-trigger="load"'
-            f' hx-select="#download-runs-section"'
-            f' hx-target="#download-runs-section"'
+            f' hx-select="#refresh-results-section"'
+            f' hx-target="#refresh-results-section"'
             f' hx-swap="outerHTML">'
             f'<p class="font-medium text-green-800">Selesai{dur}</p>'
             f'<p class="mt-1 text-green-700">'
