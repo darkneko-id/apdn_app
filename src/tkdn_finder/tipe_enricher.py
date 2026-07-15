@@ -12,7 +12,8 @@ from typing import Any
 import httpx
 from bs4 import BeautifulSoup
 
-from .constants import DEFAULT_USER_AGENT
+from .constants import DEFAULT_USER_AGENT, TIPE_ENRICH_TKDN_MATCH_TOLERANCE
+from .textnorm import clean_cell_text, match_key, parse_tkdn_percent
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +61,10 @@ async def scrape_tipe_for_company(
                 break
 
             for row in rows:
-                cells = [td.get_text(strip=True) for td in row.find_all("td")]
+                cells = [
+                    clean_cell_text(td.get_text(" ", strip=True))
+                    for td in row.find_all("td")
+                ]
                 if len(cells) < 7:
                     continue
                 # Columns: No | Perusahaan | Kelompok Barang | Jenis Produk
@@ -136,7 +140,10 @@ async def scrape_and_enrich_for_query(
                 break
 
             for row in page_rows:
-                cells = [td.get_text(strip=True) for td in row.find_all("td")]
+                cells = [
+                    clean_cell_text(td.get_text(" ", strip=True))
+                    for td in row.find_all("td")
+                ]
                 if len(cells) < 7:
                     continue
                 all_rows.append({
@@ -193,83 +200,100 @@ def enrich_tipe_in_db(
 ) -> dict[str, int]:
     """Match scraped rows to DB entries and upsert Tipe data.
 
-    Matching: (nama_produk, spesifikasi, nilai_tkdn rounded to 2dp).
+    Matching is whitespace-, case- and dash-insensitive on (nama_produk,
+    spesifikasi) — see textnorm.match_key — with nilai_tkdn tolerance.
+    tkdn.kemenperin.go.id formats the same certificate text differently from
+    the bulk export, so exact string comparison used to miss existing rows and
+    insert duplicates instead of updating them.
+
     For existing rows with tipe='': UPDATE tipe.
     For rows not in DB (new Tipe variants): INSERT as new records.
     """
     stats = {"updated": 0, "inserted": 0, "skipped": 0}
     now_str = datetime.now(timezone.utc).isoformat()
 
+    # Preload this company's rows, indexed by normalized (produk, spec) key.
+    index: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for db_r in conn.execute(
+        "SELECT * FROM tkdn_certificate WHERE nama_perusahaan = ?",
+        (company_name,),
+    ).fetchall():
+        key = (match_key(db_r["nama_produk"]), match_key(db_r["spesifikasi"]))
+        index.setdefault(key, []).append(dict(db_r))
+
     for row in scraped_rows:
-        try:
-            tkdn_val: float | None = float(row["nilai_tkdn_str"]) if row["nilai_tkdn_str"] else None
-        except ValueError:
-            tkdn_val = None
+        tkdn_val = parse_tkdn_percent(row.get("nilai_tkdn_str"))
 
-        tipe = row.get("tipe") or ""
-        spesifikasi = row.get("spesifikasi") or ""
-        nama_produk = row.get("nama_produk") or ""
+        tipe = clean_cell_text(row.get("tipe") or "")
+        spesifikasi = clean_cell_text(row.get("spesifikasi") or "")
+        nama_produk = clean_cell_text(row.get("nama_produk") or "")
 
-        if not nama_produk:
+        if not nama_produk or not tipe:
             continue
 
-        # Try to find existing row with same (company, product, spec, tkdn_value)
-        # that has tipe='' (not yet enriched)
+        candidates = [
+            c
+            for c in index.get((match_key(nama_produk), match_key(spesifikasi)), [])
+            if not c.get("_deleted")
+        ]
+
+        # Existing row with same (company, product, spec, tkdn_value) that has
+        # tipe='' (not yet enriched)
         existing = None
         if tkdn_val is not None:
-            existing = conn.execute(
-                """SELECT id, tipe FROM tkdn_certificate
-                   WHERE nama_perusahaan = ?
-                     AND nama_produk = ?
-                     AND spesifikasi = ?
-                     AND tipe = ''
-                     AND ABS(COALESCE(nilai_tkdn, -999) - ?) < 0.1
-                   LIMIT 1""",
-                (company_name, nama_produk, spesifikasi, tkdn_val),
-            ).fetchone()
+            existing = next(
+                (
+                    c
+                    for c in candidates
+                    if not (c["tipe"] or "")
+                    and c["nilai_tkdn"] is not None
+                    and abs(c["nilai_tkdn"] - tkdn_val) < TIPE_ENRICH_TKDN_MATCH_TOLERANCE
+                ),
+                None,
+            )
 
-        if existing and tipe:
-            # Check if target (company, prod, spec, tipe) already exists from a
-            # previous enrichment — if so, just remove the stale empty-tipe row.
-            already = conn.execute(
-                "SELECT 1 FROM tkdn_certificate "
-                "WHERE nama_perusahaan=? AND nama_produk=? AND spesifikasi=? AND tipe=?",
-                (company_name, nama_produk, spesifikasi, tipe),
-            ).fetchone()
+        # Row that already carries this tipe (from a previous enrichment)
+        tipe_key = match_key(tipe)
+        already = next(
+            (c for c in candidates if match_key(c["tipe"]) == tipe_key), None
+        )
+
+        if existing is not None:
             if already:
+                # Target tipe already exists — just remove the stale empty-tipe row.
                 conn.execute("DELETE FROM tkdn_certificate WHERE id=?", (existing["id"],))
+                existing["_deleted"] = True
                 stats["skipped"] += 1
             else:
                 conn.execute(
                     "UPDATE tkdn_certificate SET tipe=?, ingested_at=? WHERE id=?",
                     (tipe, now_str, existing["id"]),
                 )
+                existing["tipe"] = tipe
                 stats["updated"] += 1
 
-        elif tipe:
-            # Check if this exact (company, product, spec, tipe) already exists
-            duplicate = conn.execute(
-                """SELECT 1 FROM tkdn_certificate
-                   WHERE nama_perusahaan = ? AND nama_produk = ?
-                     AND spesifikasi = ? AND tipe = ?""",
-                (company_name, nama_produk, spesifikasi, tipe),
-            ).fetchone()
-
-            if duplicate:
+        else:
+            if already:
                 stats["skipped"] += 1
                 continue
 
-            # Insert new row for this Tipe variant
-            db_row = conn.execute(
-                """SELECT * FROM tkdn_certificate
-                   WHERE nama_perusahaan = ? AND nama_produk = ? AND spesifikasi = ?
-                   LIMIT 1""",
-                (company_name, nama_produk, spesifikasi),
-            ).fetchone()
+            # Insert new row for this Tipe variant, cloning metadata from any
+            # sibling row of the same product. Use the sibling's stored text so
+            # the DB keeps one canonical spelling per certificate.
+            db_row = candidates[0] if candidates else None
 
             if db_row:
                 # Clone existing row with new Tipe. INSERT OR IGNORE is idempotent:
                 # if a previous enrichment run already inserted this exact tipe, skip.
+                new_row = {
+                    **db_row,
+                    "merek": clean_cell_text(row.get("merek") or "") or db_row["merek"],
+                    "tipe": tipe,
+                    "nilai_tkdn": tkdn_val if tkdn_val is not None else db_row["nilai_tkdn"],
+                    "kelompok_barang": clean_cell_text(row.get("kelompok_barang") or "")
+                    or db_row["kelompok_barang"],
+                    "ingested_at": now_str,
+                }
                 cur = conn.execute(
                     """INSERT OR IGNORE INTO tkdn_certificate
                        (nama_perusahaan, nama_produk, spesifikasi, merek, tipe,
@@ -277,12 +301,12 @@ def enrich_tipe_in_db(
                         masa_berlaku_akhir, tahun_sumber, ingested_at)
                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (
-                        company_name, nama_produk, spesifikasi,
-                        row.get("merek") or db_row["merek"],
+                        company_name, db_row["nama_produk"], db_row["spesifikasi"],
+                        new_row["merek"],
                         tipe,
-                        tkdn_val if tkdn_val is not None else db_row["nilai_tkdn"],
+                        new_row["nilai_tkdn"],
                         db_row["kode_hs"], db_row["kbli"],
-                        row.get("kelompok_barang") or db_row["kelompok_barang"],
+                        new_row["kelompok_barang"],
                         db_row["alamat"], db_row["provinsi"],
                         db_row["masa_berlaku_akhir"], db_row["tahun_sumber"],
                         now_str,
@@ -290,6 +314,13 @@ def enrich_tipe_in_db(
                 )
                 if cur.rowcount > 0:
                     stats["inserted"] += 1
+                    new_row["id"] = conn.execute(
+                        "SELECT last_insert_rowid()"
+                    ).fetchone()[0]
+                    index.setdefault(
+                        (match_key(db_row["nama_produk"]), match_key(db_row["spesifikasi"])),
+                        [],
+                    ).append(new_row)
                 else:
                     stats["skipped"] += 1
             else:

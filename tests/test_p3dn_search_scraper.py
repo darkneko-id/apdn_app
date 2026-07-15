@@ -425,3 +425,100 @@ class TestUpsertP3dnRowsNormalizedMatching:
 
         assert stats["inserted"] == 0
         assert _count(db) == 1
+
+    def test_matches_despite_internal_whitespace_and_dash_variants(
+        self, db: sqlite3.Connection, cert_factory: Any
+    ) -> None:
+        """Regression (PT Artas Energi Petrogas): the bulk export uses an
+        en dash and single spaces; search.php renders the same spec with a
+        plain hyphen and doubled/missing internal spaces. The old TRIM-only
+        comparison missed the row, inserted a duplicate marked P3DN-aktif and
+        flagged the original as 'Tidak ditemukan di P3DN'."""
+        spec_db = ("API 5CT, Grade N80/N80Q, L80, C90, R95, T95, P110, Q125, "
+                   "Dia. 4 1/2 – 13 3/8 inch, R1, R2, R3, PE")
+        spec_scraped = ("API 5CT, Grade N80/N80Q, L80,  C90, R95, T95, P110, Q125, "
+                        "Dia. 4 1/2 - 13 3/8 inch, R1, R2,R3, PE")
+        merge_and_upsert(db, [cert_factory(
+            nama_produk="Heat Treatment Process - Carbon Steel Seamless Casing",
+            spesifikasi=spec_db,
+            nilai_tkdn=35.53,
+            tipe="",
+        )])
+
+        stats = upsert_p3dn_rows(
+            db, "PT Test Corp",
+            [{"nama_produk": "Heat Treatment Process – Carbon Steel Seamless Casing",
+              "spesifikasi": spec_scraped, "nilai_tkdn": 35.53}],
+            TODAY,
+        )
+
+        assert stats["inserted"] == 0
+        assert stats["updated"] == 1
+        assert _count(db) == 1
+        row = _fetch_one(db, spesifikasi=spec_db)
+        assert row is not None
+        assert row["p3dn_search_last_seen"] == TODAY_STR
+        assert row["p3dn_not_found_since"] is None
+
+    def test_heals_skeleton_duplicate_created_by_old_matching(
+        self, db: sqlite3.Connection, cert_factory: Any
+    ) -> None:
+        """DBs corrupted by the old bug hold both the bulk-export row (flagged
+        not-found) and a skeleton duplicate inserted from search.php. A re-scrape
+        must delete the skeleton and rehabilitate the original row."""
+        merge_and_upsert(db, [cert_factory(
+            nama_produk="Casing Pipe", spesifikasi="API 5CT – Grade L80",
+            nilai_tkdn=35.53, tipe="",
+        )])
+        db.execute(
+            "UPDATE tkdn_certificate SET p3dn_not_found_since = '2026-06-01'"
+        )
+        # Skeleton duplicate as the old code inserted it (spec text differs slightly)
+        db.execute(
+            """INSERT INTO tkdn_certificate
+               (nama_perusahaan, nama_produk, spesifikasi, merek, tipe, nilai_tkdn,
+                p3dn_search_last_seen)
+               VALUES ('PT Test Corp', 'Casing Pipe', 'API 5CT - Grade  L80', '', '',
+                       35.53, '2026-06-01')"""
+        )
+        db.commit()
+        assert _count(db) == 2
+
+        stats = upsert_p3dn_rows(
+            db, "PT Test Corp",
+            [{"nama_produk": "Casing Pipe", "spesifikasi": "API 5CT - Grade L80",
+              "nilai_tkdn": 35.53}],
+            TODAY,
+        )
+
+        assert stats["deduped"] == 1
+        assert stats["inserted"] == 0
+        assert _count(db) == 1
+        row = _fetch_one(db, nama_produk="Casing Pipe")
+        assert row is not None
+        assert row["masa_berlaku_akhir"] is not None  # the bulk-export row survived
+        assert row["p3dn_search_last_seen"] == TODAY_STR
+        assert row["p3dn_not_found_since"] is None
+
+    def test_distinct_tkdn_values_still_insert_separate_rows(
+        self, db: sqlite3.Connection, cert_factory: Any
+    ) -> None:
+        """Normalized matching must not over-collapse: same product name with
+        clearly different TKDN values are distinct certificates."""
+        merge_and_upsert(db, [cert_factory(
+            nama_produk="Steel Pipe", spesifikasi="", nilai_tkdn=25.0, tipe="",
+        )])
+
+        stats = upsert_p3dn_rows(
+            db, "PT Test Corp",
+            [
+                {"nama_produk": "Steel Pipe", "spesifikasi": "", "nilai_tkdn": 25.0},
+                {"nama_produk": "Steel Pipe", "spesifikasi": "", "nilai_tkdn": 31.7},
+                {"nama_produk": "Steel Pipe", "spesifikasi": "", "nilai_tkdn": 42.9},
+            ],
+            TODAY,
+        )
+
+        assert stats["updated"] == 1
+        assert stats["inserted"] == 2
+        assert _count(db) == 3
