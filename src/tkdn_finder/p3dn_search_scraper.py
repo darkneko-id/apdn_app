@@ -289,13 +289,17 @@ def upsert_p3dn_rows(
     now_str = datetime.now(timezone.utc).isoformat()
 
     def _is_minimal(r: dict[str, Any]) -> bool:
-        """True for skeleton rows this importer created (no bulk-export data)."""
-        return (
-            r["tahun_sumber"] is None
-            and r["masa_berlaku_akhir"] is None
-            and not (r["tipe"] or "")
-            and not (r["merek"] or "")
-        )
+        """True for skeleton rows this importer created (no bulk-export provenance).
+
+        tahun_sumber/masa_berlaku_akhir are only ever set by the bulk-export
+        parser or by tipe_enricher's variant-clone (which copies them from the
+        sibling bulk row) — never by this importer. That makes them a reliable
+        provenance marker, unlike tipe/merek: a prior matching bug could have
+        written a real tipe onto one of these skeleton rows (matching it
+        instead of the true bulk row), so tipe/merek being non-empty must NOT
+        disqualify a row from being treated as the skeleton to clean up.
+        """
+        return r["tahun_sumber"] is None and r["masa_berlaku_akhir"] is None
 
     # Preload this company's rows once and index them by normalized
     # (produk, spesifikasi) key — SQL string functions can't express the
@@ -343,14 +347,41 @@ def upsert_p3dn_rows(
             # is redundant — drop it and keep the real row.
             rich = [r for r in matches if not _is_minimal(r)]
             if rich and nilai_tkdn is not None:
+                # A single empty-tipe rich row is an unambiguous merge target
+                # for any tipe/merek the skeleton accidentally picked up (e.g.
+                # from a prior mismatched enrichment run).
+                merge_target = (
+                    rich[0]
+                    if len(rich) == 1 and not (rich[0].get("tipe") or "")
+                    else None
+                )
                 for r in matches:
-                    if _is_minimal(r):
-                        conn.execute(
-                            "DELETE FROM tkdn_certificate WHERE id = ?", (r["id"],)
-                        )
-                        deleted_ids.add(r["id"])
-                        stats["deduped"] += 1
-                matches = rich
+                    if not _is_minimal(r):
+                        continue
+                    if merge_target is not None:
+                        if (r.get("tipe") or "") and not (merge_target.get("tipe") or ""):
+                            conn.execute(
+                                "UPDATE tkdn_certificate SET tipe=? WHERE id=?",
+                                (r["tipe"], merge_target["id"]),
+                            )
+                            merge_target["tipe"] = r["tipe"]
+                        if (r.get("merek") or "") and not (merge_target.get("merek") or ""):
+                            conn.execute(
+                                "UPDATE tkdn_certificate SET merek=? WHERE id=?",
+                                (r["merek"], merge_target["id"]),
+                            )
+                            merge_target["merek"] = r["merek"]
+                    elif r.get("tipe") or r.get("merek"):
+                        # No unambiguous merge target and the skeleton carries
+                        # tipe/merek data — keep it rather than silently
+                        # discard that data.
+                        continue
+                    conn.execute(
+                        "DELETE FROM tkdn_certificate WHERE id = ?", (r["id"],)
+                    )
+                    deleted_ids.add(r["id"])
+                    stats["deduped"] += 1
+                matches = [r for r in matches if r["id"] not in deleted_ids]
 
             for ex in matches:
                 conn.execute(

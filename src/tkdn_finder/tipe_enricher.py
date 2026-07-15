@@ -209,7 +209,7 @@ def enrich_tipe_in_db(
     For existing rows with tipe='': UPDATE tipe.
     For rows not in DB (new Tipe variants): INSERT as new records.
     """
-    stats = {"updated": 0, "inserted": 0, "skipped": 0}
+    stats = {"updated": 0, "inserted": 0, "skipped": 0, "deduped": 0}
     now_str = datetime.now(timezone.utc).isoformat()
 
     # Preload this company's rows, indexed by normalized (produk, spec) key.
@@ -260,10 +260,32 @@ def enrich_tipe_in_db(
 
         if existing is not None:
             if already:
-                # Target tipe already exists — just remove the stale empty-tipe row.
-                conn.execute("DELETE FROM tkdn_certificate WHERE id=?", (existing["id"],))
-                existing["_deleted"] = True
-                stats["skipped"] += 1
+                # `already` carries this tipe already, but that doesn't always
+                # mean it's the authoritative row: rows imported by the P3DN
+                # search importer (upsert_p3dn_rows) start with tipe='' and no
+                # bulk-export provenance (tahun_sumber IS NULL); a prior buggy
+                # match could have set tipe on such a skeleton row instead of
+                # on the real bulk-export row. Detect that by provenance —
+                # only delete `existing` when `already` is itself a genuine
+                # bulk-sourced/cloned variant (tahun_sumber IS NOT NULL).
+                if already["tahun_sumber"] is None:
+                    conn.execute(
+                        "UPDATE tkdn_certificate SET tipe=?, ingested_at=? WHERE id=?",
+                        (tipe, now_str, existing["id"]),
+                    )
+                    conn.execute(
+                        "DELETE FROM tkdn_certificate WHERE id=?", (already["id"],)
+                    )
+                    existing["tipe"] = tipe
+                    already["_deleted"] = True
+                    stats["updated"] += 1
+                    stats["deduped"] += 1
+                else:
+                    # Target tipe already exists as a proper cloned variant —
+                    # just remove the stale empty-tipe row.
+                    conn.execute("DELETE FROM tkdn_certificate WHERE id=?", (existing["id"],))
+                    existing["_deleted"] = True
+                    stats["skipped"] += 1
             else:
                 conn.execute(
                     "UPDATE tkdn_certificate SET tipe=?, ingested_at=? WHERE id=?",

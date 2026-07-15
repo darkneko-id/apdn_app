@@ -116,6 +116,46 @@ class TestEnrichUpdatesEmptyTipe:
         assert stats["updated"] == 0
         assert _count(db) == 2
 
+    def test_recovers_from_corrupted_skeleton_that_stole_the_tipe(
+        self, db: sqlite3.Connection, cert_factory: Any
+    ) -> None:
+        """Regression (PT Artas Energi Petrogas, post-fix relapse): a P3DN-only
+        skeleton row (tahun_sumber IS NULL) can have gotten its tipe wrongly
+        set by an earlier buggy enrichment run. The true bulk-export row
+        (tipe='', has provenance) must win: get the tipe, and the skeleton
+        must be deleted — not the other way around."""
+        merge_and_upsert(db, [cert_factory(
+            nama_produk="Carbon Steel Seamless Casing",
+            spesifikasi="API 5CT, Grade N80/N80Q, L80, C90, R95, T95, P110, Q125",
+            nilai_tkdn=51.47,
+            tipe="",
+        )])
+        # Corrupted skeleton: no tahun_sumber/masa_berlaku (P3DN-only import),
+        # but tipe was already (wrongly) set by a stale enrichment match.
+        db.execute(
+            """INSERT INTO tkdn_certificate
+               (nama_perusahaan, nama_produk, spesifikasi, merek, tipe, nilai_tkdn,
+                tahun_sumber, masa_berlaku_akhir, p3dn_search_last_seen)
+               VALUES ('PT Test Corp', 'Carbon Steel Seamless Casing',
+                       'API 5CT, Grade N80/N80Q, L80, C90, R95, T95, P110, Q125',
+                       '', 'Casing Plain End', 51.47, NULL, NULL, '2026-07-15')"""
+        )
+        db.commit()
+        assert _count(db) == 2
+
+        stats = enrich_tipe_in_db(db, "PT Test Corp", [_scraped(
+            nama_produk="Carbon Steel Seamless Casing",
+            spesifikasi="API 5CT, Grade N80/N80Q, L80, C90, R95, T95, P110, Q125",
+            tipe="Casing Plain End",
+            nilai_tkdn_str="51.47",
+        )])
+
+        assert stats["deduped"] == 1
+        assert _count(db) == 1
+        row = _rows(db)[0]
+        assert row["tipe"] == "Casing Plain End"
+        assert row["masa_berlaku_akhir"] == "2027-12-31"  # bulk-export row survived
+
     def test_row_without_tipe_is_ignored(
         self, db: sqlite3.Connection, cert_factory: Any
     ) -> None:
@@ -123,5 +163,5 @@ class TestEnrichUpdatesEmptyTipe:
 
         stats = enrich_tipe_in_db(db, "PT Test Corp", [_scraped(tipe="")])
 
-        assert stats == {"updated": 0, "inserted": 0, "skipped": 0}
+        assert stats == {"updated": 0, "inserted": 0, "skipped": 0, "deduped": 0}
         assert _rows(db)[0]["tipe"] == ""

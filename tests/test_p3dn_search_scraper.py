@@ -500,6 +500,42 @@ class TestUpsertP3dnRowsNormalizedMatching:
         assert row["p3dn_search_last_seen"] == TODAY_STR
         assert row["p3dn_not_found_since"] is None
 
+    def test_heals_skeleton_duplicate_whose_tipe_was_corrupted(
+        self, db: sqlite3.Connection, cert_factory: Any
+    ) -> None:
+        """Regression: a skeleton row (no bulk provenance) that had its tipe
+        wrongly set by a stale enrichment match must still be recognized as
+        the duplicate to remove — tipe being non-empty must not make it look
+        like the authoritative row. Its tipe is merged onto the survivor."""
+        merge_and_upsert(db, [cert_factory(
+            nama_produk="Casing Pipe", spesifikasi="API 5CT – Grade L80",
+            nilai_tkdn=51.47, tipe="",
+        )])
+        db.execute(
+            """INSERT INTO tkdn_certificate
+               (nama_perusahaan, nama_produk, spesifikasi, merek, tipe, nilai_tkdn,
+                tahun_sumber, masa_berlaku_akhir, p3dn_search_last_seen)
+               VALUES ('PT Test Corp', 'Casing Pipe', 'API 5CT - Grade L80', '',
+                       'Casing Plain End', 51.47, NULL, NULL, '2026-06-01')"""
+        )
+        db.commit()
+        assert _count(db) == 2
+
+        stats = upsert_p3dn_rows(
+            db, "PT Test Corp",
+            [{"nama_produk": "Casing Pipe", "spesifikasi": "API 5CT - Grade L80",
+              "nilai_tkdn": 51.47}],
+            TODAY,
+        )
+
+        assert stats["deduped"] == 1
+        assert _count(db) == 1
+        row = _fetch_one(db, nama_produk="Casing Pipe")
+        assert row is not None
+        assert row["tipe"] == "Casing Plain End"  # recovered, not lost
+        assert row["masa_berlaku_akhir"] is not None  # bulk-export row survived
+        assert row["p3dn_search_last_seen"] == TODAY_STR
+
     def test_distinct_tkdn_values_still_insert_separate_rows(
         self, db: sqlite3.Connection, cert_factory: Any
     ) -> None:
