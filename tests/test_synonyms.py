@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import ast
+import inspect
 import json
 import sqlite3
 
 import pytest
 
+import tkdn_finder.constants as constants_module
+from tkdn_finder.constants import DEFAULT_SYNONYM_SEEDS
 from tkdn_finder.synonyms import expand_query, load_synonyms
 
 
@@ -167,6 +171,23 @@ class TestLoadSynonyms:
         synonyms = load_synonyms(db)
         assert synonyms == {}
 
+    def test_uppercase_canonical_lowercased_on_load(
+        self, db: sqlite3.Connection
+    ) -> None:
+        # expand_query matches via phrase.lower(), so canonicals stored with
+        # uppercase (e.g. "UPS", "OCTG") must be keyed lowercase on load.
+        db.execute(
+            "INSERT INTO synonym (canonical, variants, enabled) VALUES (?, ?, 1)",
+            ("UPS", json.dumps(["uninterruptible power supply"])),
+        )
+        db.commit()
+
+        synonyms = load_synonyms(db)
+
+        assert "ups" in synonyms
+        result = expand_query("ups", synonyms)
+        assert "uninterruptible power supply" in result
+
     def test_variants_cast_to_strings(self, db: sqlite3.Connection) -> None:
         db.execute(
             "INSERT INTO synonym (canonical, variants, enabled) VALUES (?, ?, 1)",
@@ -177,3 +198,50 @@ class TestLoadSynonyms:
         synonyms = load_synonyms(db)
 
         assert synonyms["code"] == ["123", "456"]
+
+
+# ---------------------------------------------------------------------------
+# DEFAULT_SYNONYM_SEEDS — sanity checks
+# ---------------------------------------------------------------------------
+
+class TestDefaultSynonymSeeds:
+    def test_no_duplicate_keys_in_source(self) -> None:
+        # A duplicate key in the dict literal silently overwrites the earlier
+        # entry at parse time (this happened with "level gauge"), so inspect
+        # the source AST rather than the built dict.
+        tree = ast.parse(inspect.getsource(constants_module))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign):
+                targets = node.targets
+            elif isinstance(node, ast.AnnAssign):
+                targets = [node.target]
+            else:
+                continue
+            if not (
+                any(
+                    isinstance(t, ast.Name) and t.id == "DEFAULT_SYNONYM_SEEDS"
+                    for t in targets
+                )
+                and isinstance(node.value, ast.Dict)
+            ):
+                continue
+            keys = [
+                k.value.lower()
+                for k in node.value.keys
+                if isinstance(k, ast.Constant)
+            ]
+            duplicates = {k for k in keys if keys.count(k) > 1}
+            assert not duplicates, f"Duplicate synonym keys: {duplicates}"
+            return
+        pytest.fail("DEFAULT_SYNONYM_SEEDS dict literal not found in constants.py")
+
+    def test_no_variant_duplicates_canonical(self) -> None:
+        # A variant identical to its own canonical just bloats the OR group.
+        for canonical, variants in DEFAULT_SYNONYM_SEEDS.items():
+            lowered = [v.lower() for v in variants]
+            assert canonical.lower() not in lowered, (
+                f"Variant duplicates canonical: {canonical!r}"
+            )
+            assert len(set(lowered)) == len(lowered), (
+                f"Duplicate variants for {canonical!r}"
+            )
