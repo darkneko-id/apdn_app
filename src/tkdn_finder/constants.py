@@ -7,8 +7,10 @@ P3DN_SEARCH_URL = "https://p3dn.kemenperin.go.id/search.php"
 P3DN_DETAIL_BASE_URL = "https://p3dn.kemenperin.go.id/sertifikat_perush.php"
 P3DN_SEARCH_DETAIL_FETCH_CONCURRENCY = 5
 # Tolerance when matching a scraped TKDN% against a stored value.
-# P3DN search.php rounds differently from the bulk export, hence the slack.
-P3DN_SEARCH_TKDN_MATCH_TOLERANCE = 0.5
+# P3DN search.php rounds differently from the bulk export, hence the slack —
+# but keep it tight: distinct certificates can differ by only a few tenths of
+# a percent, and a wide tolerance wrongly collapses them into one row.
+P3DN_SEARCH_TKDN_MATCH_TOLERANCE = 0.1
 TIPE_ENRICH_TKDN_MATCH_TOLERANCE = 0.1
 EXPORT_LINK_HREF_PATTERN = r"export_excel\.php"
 YEAR_EXTRACTION_PATTERN = r"(\d{4})"

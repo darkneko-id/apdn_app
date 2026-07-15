@@ -38,7 +38,18 @@ _HEADER_ALIASES: dict[str, str] = {
     "masa berlaku": "masa_berlaku_akhir",
     "kelompok barang": "kelompok_barang",
     "kelompok": "kelompok_barang",
+    "tipe": "tipe",
+    "merk": "merek",
+    "merek": "merek",
 }
+
+# Placeholder cell values the site renders for "no data"
+_EMPTY_CELL_VALUES = frozenset({"", "-", "–", "—", "−"})
+
+
+def _cell_or_empty(value: str | None) -> str:
+    v = (value or "").strip()
+    return "" if v in _EMPTY_CELL_VALUES else v
 
 
 def _detect_columns(rows: list[Tag]) -> tuple[dict[str, int], int]:
@@ -204,6 +215,10 @@ async def scrape_p3dn_search(
                     "spesifikasi": _get_col(texts, col_map, "spesifikasi") or "",
                     "nilai_tkdn": nilai_tkdn,
                     "kelompok_barang": _get_col(texts, col_map, "kelompok_barang"),
+                    # Tipe/Merk are part of the certificate's identity on
+                    # search.php — rows can differ ONLY in these columns.
+                    "tipe": _cell_or_empty(_get_col(texts, col_map, "tipe")),
+                    "merek": _cell_or_empty(_get_col(texts, col_map, "merek")),
                     "detail_url": detail_url,
                 })
 
@@ -283,6 +298,11 @@ def upsert_p3dn_rows(
     P3DN's search.php and the bulk export format the same certificate text
     differently, and an exact/TRIM-only comparison used to miss the row, insert
     a duplicate, and falsely mark the original as absent from P3DN.
+
+    Tipe and Merk are part of a certificate's identity on search.php — rows
+    can differ ONLY in those columns (the bulk export leaves tipe empty).
+    A scraped tipe/merek is backfilled onto a matching empty-tipe/-merek row;
+    a conflicting one means a distinct certificate and inserts a new row.
     """
     stats = {"updated": 0, "inserted": 0, "skipped": 0, "deduped": 0}
     today_str = today.isoformat()
@@ -294,10 +314,10 @@ def upsert_p3dn_rows(
         tahun_sumber/masa_berlaku_akhir are only ever set by the bulk-export
         parser or by tipe_enricher's variant-clone (which copies them from the
         sibling bulk row) — never by this importer. That makes them a reliable
-        provenance marker, unlike tipe/merek: a prior matching bug could have
-        written a real tipe onto one of these skeleton rows (matching it
-        instead of the true bulk row), so tipe/merek being non-empty must NOT
-        disqualify a row from being treated as the skeleton to clean up.
+        provenance marker, unlike tipe/merek, which this importer now scrapes
+        from search.php (and which a pre-fix matching bug could also have set
+        wrongly) — so tipe/merek being non-empty must NOT disqualify a row
+        from being treated as the P3DN-only skeleton.
         """
         return r["tahun_sumber"] is None and r["masa_berlaku_akhir"] is None
 
@@ -319,6 +339,8 @@ def upsert_p3dn_rows(
     for row in rows:
         produk = clean_cell_text(row.get("nama_produk") or "")
         spec = clean_cell_text(row.get("spesifikasi") or "")
+        scraped_tipe = clean_cell_text(row.get("tipe") or "")
+        scraped_merek = clean_cell_text(row.get("merek") or "")
         nilai_tkdn = row.get("nilai_tkdn")
 
         if not produk:
@@ -344,38 +366,58 @@ def upsert_p3dn_rows(
             # Heal duplicates created by the old exact-text matching: if this
             # scraped row matches both a real (bulk-export/enriched) row and a
             # skeleton row previously inserted by this importer, the skeleton
-            # is redundant — drop it and keep the real row.
+            # is redundant — drop it, first rescuing any tipe/merek it carries
+            # onto a rich row that lacks them.
             rich = [r for r in matches if not _is_minimal(r)]
             if rich and nilai_tkdn is not None:
-                # A single empty-tipe rich row is an unambiguous merge target
-                # for any tipe/merek the skeleton accidentally picked up (e.g.
-                # from a prior mismatched enrichment run).
-                merge_target = (
-                    rich[0]
-                    if len(rich) == 1 and not (rich[0].get("tipe") or "")
-                    else None
-                )
-                for r in matches:
+                for r in list(matches):
                     if not _is_minimal(r):
                         continue
-                    if merge_target is not None:
-                        if (r.get("tipe") or "") and not (merge_target.get("tipe") or ""):
+                    r_tipe_k = match_key(r["tipe"])
+                    r_merek_k = match_key(r["merek"])
+                    # Already represented by a rich row carrying the same
+                    # tipe/merek (empty skeleton fields match anything)?
+                    represented = any(
+                        (not r_tipe_k or match_key(x["tipe"]) == r_tipe_k)
+                        and (not r_merek_k or match_key(x["merek"]) == r_merek_k)
+                        for x in rich
+                    )
+                    if not represented:
+                        # Merge the skeleton's fields onto a rich row whose
+                        # corresponding fields are empty (or already equal).
+                        target = next(
+                            (
+                                x
+                                for x in rich
+                                if (
+                                    not r_tipe_k
+                                    or not (x["tipe"] or "")
+                                    or match_key(x["tipe"]) == r_tipe_k
+                                )
+                                and (
+                                    not r_merek_k
+                                    or not (x["merek"] or "")
+                                    or match_key(x["merek"]) == r_merek_k
+                                )
+                            ),
+                            None,
+                        )
+                        if target is None:
+                            # Deleting would lose the skeleton's tipe/merek —
+                            # keep it; it now acts as a distinct variant row.
+                            continue
+                        if r_tipe_k and not (target["tipe"] or ""):
                             conn.execute(
                                 "UPDATE tkdn_certificate SET tipe=? WHERE id=?",
-                                (r["tipe"], merge_target["id"]),
+                                (r["tipe"], target["id"]),
                             )
-                            merge_target["tipe"] = r["tipe"]
-                        if (r.get("merek") or "") and not (merge_target.get("merek") or ""):
+                            target["tipe"] = r["tipe"]
+                        if r_merek_k and not (target["merek"] or ""):
                             conn.execute(
                                 "UPDATE tkdn_certificate SET merek=? WHERE id=?",
-                                (r["merek"], merge_target["id"]),
+                                (r["merek"], target["id"]),
                             )
-                            merge_target["merek"] = r["merek"]
-                    elif r.get("tipe") or r.get("merek"):
-                        # No unambiguous merge target and the skeleton carries
-                        # tipe/merek data — keep it rather than silently
-                        # discard that data.
-                        continue
+                            target["merek"] = r["merek"]
                     conn.execute(
                         "DELETE FROM tkdn_certificate WHERE id = ?", (r["id"],)
                     )
@@ -383,6 +425,51 @@ def upsert_p3dn_rows(
                     stats["deduped"] += 1
                 matches = [r for r in matches if r["id"] not in deleted_ids]
 
+        # search.php rows can differ ONLY in Tipe/Merk — those are distinct
+        # certificates. Narrow the matches accordingly: prefer rows carrying
+        # the same tipe; else backfill onto an empty-tipe row (that's exactly
+        # what the Update Tipe button promises); else treat as a new variant.
+        if matches and scraped_tipe:
+            tipe_k = match_key(scraped_tipe)
+            same_tipe = [r for r in matches if match_key(r["tipe"]) == tipe_k]
+            if same_tipe:
+                matches = same_tipe
+            else:
+                empty_tipe = [r for r in matches if not (r["tipe"] or "")]
+                if not empty_tipe:
+                    matches = []  # all matches carry a DIFFERENT tipe
+                elif nilai_tkdn is None:
+                    matches = empty_tipe  # too uncertain to backfill or fork
+                else:
+                    target = empty_tipe[0]
+                    conn.execute(
+                        "UPDATE tkdn_certificate SET tipe=? WHERE id=?",
+                        (scraped_tipe, target["id"]),
+                    )
+                    target["tipe"] = scraped_tipe
+                    matches = [target]
+
+        if matches and scraped_merek:
+            merek_k = match_key(scraped_merek)
+            same_merek = [r for r in matches if match_key(r["merek"]) == merek_k]
+            if same_merek:
+                matches = same_merek
+            else:
+                empty_merek = [r for r in matches if not (r["merek"] or "")]
+                if not empty_merek:
+                    matches = []  # all matches carry a DIFFERENT merek
+                elif nilai_tkdn is None:
+                    matches = empty_merek
+                else:
+                    target = empty_merek[0]
+                    conn.execute(
+                        "UPDATE tkdn_certificate SET merek=? WHERE id=?",
+                        (scraped_merek, target["id"]),
+                    )
+                    target["merek"] = scraped_merek
+                    matches = [target]
+
+        if matches:
             for ex in matches:
                 conn.execute(
                     "UPDATE tkdn_certificate SET p3dn_search_last_seen = ? WHERE id = ?",
@@ -397,9 +484,10 @@ def upsert_p3dn_rows(
                        (nama_perusahaan, nama_produk, spesifikasi, merek, tipe,
                         nilai_tkdn, kode_hs, kbli, kelompok_barang, alamat, provinsi,
                         masa_berlaku_akhir, tahun_sumber, ingested_at, p3dn_search_last_seen)
-                       VALUES (?, ?, ?, '', '', ?, NULL, NULL, ?, ?, NULL, NULL, NULL, ?, ?)""",
+                       VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, NULL, NULL, NULL, ?, ?)""",
                     (
                         db_company_name, produk, spec,
+                        scraped_merek, scraped_tipe,
                         nilai_tkdn,
                         row.get("kelompok_barang"),
                         row.get("alamat"),
@@ -415,8 +503,8 @@ def upsert_p3dn_rows(
                         "nama_produk": produk,
                         "spesifikasi": spec,
                         "nilai_tkdn": nilai_tkdn,
-                        "merek": "",
-                        "tipe": "",
+                        "merek": scraped_merek,
+                        "tipe": scraped_tipe,
                         "tahun_sumber": None,
                         "masa_berlaku_akhir": None,
                     })
