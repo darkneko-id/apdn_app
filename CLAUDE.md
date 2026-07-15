@@ -64,7 +64,7 @@ Two external sources feed the local SQLite database:
 2. `downloader.py` — downloads each year's HTML-disguised-as-XLS file to `data/raw/`.
 3. `parser.py` — `parse_html_export()` reads the file as UTF-8 text via BeautifulSoup, maps columns via `HTML_COLUMN_MAP` in `constants.py`, and normalises values. **Tipe column is systematically empty in this source.**
 4. `merger.py` — calls `db.upsert_certificate()` for each row. Dedup key: `(nama_perusahaan, nama_produk, spesifikasi, tipe)`.
-5. `scheduler.py` — APScheduler runs `refresh_all_years` on cron from config. Progress is tracked in the module-level `refresh_state.py` singleton.
+5. `scheduler.py` — APScheduler runs `refresh_all_years` on cron from config. Progress is tracked in the module-level `refresh_state.py` singleton. On successful completion it also records a `year_count_snapshot` row (see below).
 
 **Source 2 — TKDN Kemenperin search** (`tkdn.kemenperin.go.id/search.php`):
 - `tipe_enricher.py` — scrapes the secondary government site per company name to backfill the `tipe` column that is absent from bulk exports. Triggered via `POST /enrich-tipe` in `routes/search.py`. Matches scraped rows to DB rows by `(nama_produk, spesifikasi, nilai_tkdn ±0.1)`, then either updates empty-tipe rows or inserts new rows for distinct tipe variants.
@@ -86,10 +86,12 @@ Routes in `src/tkdn_finder/routes/`:
 - `POST /enrich-tipe` — triggers Tipe enrichment for companies in current search results
 - `GET /cert/{id}` — certificate detail page
 - `GET /export.xlsx` — export current search as Excel
-- `GET /admin`, `POST /admin/refresh` — admin UI, download run history, synonym CRUD
+- `GET /admin`, `POST /admin/refresh` — admin UI, download run history, per-year certificate-count trend sparklines, synonym CRUD
 - `GET /health`, `GET /metrics` — health check and stats
 
 DB connections are opened per-request (not pooled). `get_connection()` always enables WAL mode. All SQL lives in `db.py` — no raw SQL strings in route handlers.
+
+SVG chart geometry (polyline coordinates, scaling) is computed in `charts.py`, never in templates — see anti-patterns.
 
 Templates use a custom Jinja2 filter `wib` (registered in `main.py`) to convert UTC timestamps to WIB (UTC+7) for display.
 
@@ -102,6 +104,7 @@ Key tables:
 - `tkdn_search` — FTS5 virtual table, content-table backed by `tkdn_certificate.id`, kept in sync via triggers `tkdn_ai`/`tkdn_au`/`tkdn_ad`
 - `download_run` — history of scrape+download runs, used to surface errors in admin UI and cache last-known URLs
 - `synonym` — editable synonym map; `seeds_default_synonyms()` populates defaults at startup without overwriting existing entries
+- `year_count_snapshot` — one row per `(tahun_sumber, snapshot_date)`, at most one per day (`UNIQUE` constraint, upserted). Written by `db.save_year_count_snapshots()` after each successful `refresh_all_years` run using the deduped `COUNT(*)` from `tkdn_certificate`. Migration 013 backfilled historical points from `download_run.row_count` (source file row count, pre-dedup — expect it to diverge from later real snapshots). Powers the Admin trend sparklines; read via `db.get_year_count_trends()`.
 
 When changing the schema: add `migrations/NNN_description.sql`, update `db.py` helpers, update `models.py`, update `HTML_COLUMN_MAP` in `constants.py` if source columns changed, run `pytest`.
 

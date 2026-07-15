@@ -55,6 +55,13 @@ FTS_CANDIDATE_LIMIT = 500
 # TKDN value sentinel meaning "not applicable" in the source data
 TKDN_SENTINEL_VALUE = 999.99
 
+# Year-count trend sparklines (Admin page)
+YEAR_TREND_CHART_WIDTH = 260
+YEAR_TREND_CHART_HEIGHT = 56
+YEAR_TREND_CHART_PAD_X = 4
+YEAR_TREND_CHART_PAD_Y = 6
+YEAR_TREND_SNAPSHOT_LIMIT = 90
+
 DEFAULT_SYNONYM_SEEDS: dict[str, list[str]] = {
     # ── Valves ────────────────────────────────────────────────────────────────
     "valve": ["katup", "valv"],
