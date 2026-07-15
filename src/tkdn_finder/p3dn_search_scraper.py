@@ -16,8 +16,10 @@ from .constants import (
     DEFAULT_USER_AGENT,
     P3DN_BASE_URL,
     P3DN_SEARCH_DETAIL_FETCH_CONCURRENCY,
+    P3DN_SEARCH_TKDN_MATCH_TOLERANCE,
     P3DN_SEARCH_URL,
 )
+from .textnorm import clean_cell_text, match_key
 
 logger = logging.getLogger(__name__)
 
@@ -173,7 +175,10 @@ async def scrape_p3dn_search(
                         detail_url = P3DN_BASE_URL + "/" + href.lstrip("/")
                         break
 
-                texts = [c.get_text(strip=True) for c in cells]
+                # Separator + clean: nested tags/newlines inside a cell must not
+                # glue words together or leave double spaces — stored rows from
+                # the bulk export are whitespace-collapsed by the parser.
+                texts = [clean_cell_text(c.get_text(" ", strip=True)) for c in cells]
 
                 produk = _get_col(texts, col_map, "nama_produk")
                 if not produk:
@@ -273,50 +278,86 @@ def upsert_p3dn_rows(
     For rows already in DB (from bulk export or enrichment): UPDATE last_seen.
     For rows absent from DB: INSERT as new records with masa_berlaku_akhir=NULL.
     Always uses db_company_name for DB operations (ignores scraped company name).
+
+    Matching is whitespace-, case- and dash-insensitive (see textnorm.match_key):
+    P3DN's search.php and the bulk export format the same certificate text
+    differently, and an exact/TRIM-only comparison used to miss the row, insert
+    a duplicate, and falsely mark the original as absent from P3DN.
     """
-    stats = {"updated": 0, "inserted": 0, "skipped": 0}
+    stats = {"updated": 0, "inserted": 0, "skipped": 0, "deduped": 0}
     today_str = today.isoformat()
     now_str = datetime.now(timezone.utc).isoformat()
 
+    def _is_minimal(r: dict[str, Any]) -> bool:
+        """True for skeleton rows this importer created (no bulk-export data)."""
+        return (
+            r["tahun_sumber"] is None
+            and r["masa_berlaku_akhir"] is None
+            and not (r["tipe"] or "")
+            and not (r["merek"] or "")
+        )
+
+    # Preload this company's rows once and index them by normalized
+    # (produk, spesifikasi) key — SQL string functions can't express the
+    # whitespace/dash-insensitive comparison we need.
+    index: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for db_row in conn.execute(
+        """SELECT id, nama_produk, spesifikasi, nilai_tkdn, merek, tipe,
+                  tahun_sumber, masa_berlaku_akhir
+           FROM tkdn_certificate WHERE nama_perusahaan = ?""",
+        (db_company_name,),
+    ).fetchall():
+        key = (match_key(db_row["nama_produk"]), match_key(db_row["spesifikasi"]))
+        index.setdefault(key, []).append(dict(db_row))
+
+    deleted_ids: set[int] = set()
+
     for row in rows:
-        produk = row.get("nama_produk") or ""
-        spec = row.get("spesifikasi") or ""
+        produk = clean_cell_text(row.get("nama_produk") or "")
+        spec = clean_cell_text(row.get("spesifikasi") or "")
         nilai_tkdn = row.get("nilai_tkdn")
 
         if not produk:
             stats["skipped"] += 1
             continue
 
-        # Match existing rows by (company, product, spec) with fuzzy tkdn tolerance.
-        # nama_produk/spesifikasi are compared case/whitespace-insensitively since
-        # P3DN's search.php and bulk export format the same text differently
-        # (e.g. extra spaces, different casing) — an exact match would otherwise
-        # miss the row and create a spurious duplicate.
+        candidates = [
+            r
+            for r in index.get((match_key(produk), match_key(spec)), [])
+            if r["id"] not in deleted_ids
+        ]
         if nilai_tkdn is not None:
-            existing = conn.execute(
-                """SELECT id FROM tkdn_certificate
-                   WHERE nama_perusahaan = ?
-                     AND LOWER(TRIM(nama_produk)) = LOWER(TRIM(?))
-                     AND LOWER(TRIM(spesifikasi)) = LOWER(TRIM(?))
-                     AND ABS(COALESCE(nilai_tkdn, -999) - ?) < 0.5""",
-                (db_company_name, produk, spec, nilai_tkdn),
-            ).fetchall()
+            matches = [
+                r
+                for r in candidates
+                if r["nilai_tkdn"] is not None
+                and abs(r["nilai_tkdn"] - nilai_tkdn) < P3DN_SEARCH_TKDN_MATCH_TOLERANCE
+            ]
         else:
-            existing = conn.execute(
-                """SELECT id FROM tkdn_certificate
-                   WHERE nama_perusahaan = ?
-                     AND LOWER(TRIM(nama_produk)) = LOWER(TRIM(?))
-                     AND LOWER(TRIM(spesifikasi)) = LOWER(TRIM(?))""",
-                (db_company_name, produk, spec),
-            ).fetchall()
+            matches = candidates
 
-        if existing:
-            for ex in existing:
+        if matches:
+            # Heal duplicates created by the old exact-text matching: if this
+            # scraped row matches both a real (bulk-export/enriched) row and a
+            # skeleton row previously inserted by this importer, the skeleton
+            # is redundant — drop it and keep the real row.
+            rich = [r for r in matches if not _is_minimal(r)]
+            if rich and nilai_tkdn is not None:
+                for r in matches:
+                    if _is_minimal(r):
+                        conn.execute(
+                            "DELETE FROM tkdn_certificate WHERE id = ?", (r["id"],)
+                        )
+                        deleted_ids.add(r["id"])
+                        stats["deduped"] += 1
+                matches = rich
+
+            for ex in matches:
                 conn.execute(
                     "UPDATE tkdn_certificate SET p3dn_search_last_seen = ? WHERE id = ?",
                     (today_str, ex["id"]),
                 )
-            stats["updated"] += len(existing)
+            stats["updated"] += len(matches)
         else:
             # New product not in bulk export — insert minimal record from P3DN
             try:
@@ -337,6 +378,17 @@ def upsert_p3dn_rows(
                 )
                 if cur.rowcount > 0:
                     stats["inserted"] += 1
+                    new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+                    index.setdefault((match_key(produk), match_key(spec)), []).append({
+                        "id": new_id,
+                        "nama_produk": produk,
+                        "spesifikasi": spec,
+                        "nilai_tkdn": nilai_tkdn,
+                        "merek": "",
+                        "tipe": "",
+                        "tahun_sumber": None,
+                        "masa_berlaku_akhir": None,
+                    })
                 else:
                     stats["skipped"] += 1
             except sqlite3.IntegrityError:

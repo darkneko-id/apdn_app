@@ -63,11 +63,11 @@ Two external sources feed the local SQLite database:
 1. `scraper.py` — scrapes `https://p3dn.kemenperin.go.id/rekap.php`, finds `export_excel.php` links, returns `{year: url}` dict. Falls back to cached URLs from `download_run` table on failure.
 2. `downloader.py` — downloads each year's HTML-disguised-as-XLS file to `data/raw/`.
 3. `parser.py` — `parse_html_export()` reads the file as UTF-8 text via BeautifulSoup, maps columns via `HTML_COLUMN_MAP` in `constants.py`, and normalises values. **Tipe column is systematically empty in this source.**
-4. `merger.py` — calls `db.upsert_certificate()` for each row. Dedup key: `(nama_perusahaan, nama_produk, spesifikasi, tipe)`.
+4. `merger.py` — upserts each row. Dedup key: `(nama_perusahaan, nama_produk, spesifikasi, merek, nilai_tkdn, tipe)`.
 5. `scheduler.py` — APScheduler runs `refresh_all_years` on cron from config. Progress is tracked in the module-level `refresh_state.py` singleton. On successful completion it also records a `year_count_snapshot` row (see below).
 
 **Source 2 — TKDN Kemenperin search** (`tkdn.kemenperin.go.id/search.php`):
-- `tipe_enricher.py` — scrapes the secondary government site per company name to backfill the `tipe` column that is absent from bulk exports. Triggered via `POST /enrich-tipe` in `routes/search.py`. Matches scraped rows to DB rows by `(nama_produk, spesifikasi, nilai_tkdn ±0.1)`, then either updates empty-tipe rows or inserts new rows for distinct tipe variants.
+- `tipe_enricher.py` — scrapes the secondary government site per company name to backfill the `tipe` column that is absent from bulk exports. Triggered via `POST /enrich-tipe` in `routes/search.py`. Matches scraped rows to DB rows by normalized `(nama_produk, spesifikasi)` keys (whitespace/case/dash-insensitive, see `textnorm.py`) plus `nilai_tkdn ±0.1`, then either updates empty-tipe rows or inserts new rows for distinct tipe variants.
 
 ## Architecture: search
 
@@ -100,7 +100,7 @@ Templates use a custom Jinja2 filter `wib` (registered in `main.py`) to convert 
 Migrations applied sequentially from `migrations/NNN_*.sql` by `db._apply_migrations()`. Versions tracked in `schema_version` table.
 
 Key tables:
-- `tkdn_certificate` — main data, UNIQUE on `(nama_perusahaan, nama_produk, spesifikasi, merek, nilai_tkdn)` (migration 005 removed `tipe` from key — tipe is always '' from P3DN bulk export; including it caused re-downloads to create duplicate empty-tipe rows after enrichment). Merger preserves enriched tipe on re-download via `CASE WHEN excluded.tipe != '' THEN excluded.tipe ELSE tipe END`.
+- `tkdn_certificate` — main data, UNIQUE on `(nama_perusahaan, nama_produk, spesifikasi, merek, nilai_tkdn, tipe)` (migration 009 re-added `tipe` so enriched tipe variants can coexist as separate rows). When P3DN re-imports a tipe='' bulk row whose enriched variants already exist, the merger updates the variants' metadata in-place instead of inserting a redundant tipe='' row.
 - `tkdn_search` — FTS5 virtual table, content-table backed by `tkdn_certificate.id`, kept in sync via triggers `tkdn_ai`/`tkdn_au`/`tkdn_ad`
 - `download_run` — history of scrape+download runs, used to surface errors in admin UI and cache last-known URLs
 - `synonym` — editable synonym map; `seeds_default_synonyms()` populates defaults at startup without overwriting existing entries

@@ -6,7 +6,7 @@ from __future__ import annotations
 import logging
 import os
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
@@ -99,36 +99,6 @@ def get_db_path(data_dir: str = "data") -> str:
         base = data_dir
     os.makedirs(base, exist_ok=True)
     return os.path.join(base, "tkdn.db")
-
-
-def upsert_certificate(conn: sqlite3.Connection, row: dict[str, Any]) -> str:
-    """Insert or replace a certificate row. Returns 'inserted' or 'updated'."""
-    sql = """
-        INSERT INTO tkdn_certificate
-            (nama_perusahaan, nama_produk, spesifikasi, merek, tipe, nilai_tkdn,
-             kode_hs, kbli, kelompok_barang, alamat, provinsi, masa_berlaku_akhir,
-             tahun_sumber, ingested_at)
-        VALUES
-            (:nama_perusahaan, :nama_produk, :spesifikasi, :merek, :tipe, :nilai_tkdn,
-             :kode_hs, :kbli, :kelompok_barang, :alamat, :provinsi, :masa_berlaku_akhir,
-             :tahun_sumber, :ingested_at)
-        ON CONFLICT(nama_perusahaan, nama_produk, spesifikasi, tipe) DO UPDATE SET
-            merek = excluded.merek,
-            nilai_tkdn = excluded.nilai_tkdn,
-            kode_hs = excluded.kode_hs,
-            kbli = excluded.kbli,
-            kelompok_barang = excluded.kelompok_barang,
-            alamat = excluded.alamat,
-            provinsi = excluded.provinsi,
-            masa_berlaku_akhir = excluded.masa_berlaku_akhir,
-            tahun_sumber = excluded.tahun_sumber,
-            ingested_at = excluded.ingested_at
-    """
-    now_str = datetime.now(timezone.utc).isoformat()
-    row = {**row, "ingested_at": now_str}
-    cursor = conn.execute(sql, row)
-    # lastrowid changes only on insert; use changes() to detect update
-    return "inserted" if cursor.lastrowid and conn.execute("SELECT changes()").fetchone()[0] == 1 else "updated"
 
 
 def save_download_run(
