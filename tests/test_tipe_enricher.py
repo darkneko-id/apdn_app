@@ -70,6 +70,29 @@ class TestEnrichUpdatesEmptyTipe:
         assert _count(db) == 1
         assert _rows(db)[0]["tipe"] == "HT-CS"
 
+    def test_fuzzy_fallback_backfills_tipe_despite_reworded_spec(
+        self, db: sqlite3.Connection, cert_factory: Any
+    ) -> None:
+        """'Dia.' vs 'Diameter' rewording must not stop the tipe backfill."""
+        merge_and_upsert(db, [cert_factory(
+            nama_produk="Carbon Steel Seamless Casing",
+            spesifikasi="API 5CT, Grade N80/N80Q, Dia. 4 1/2 – 13 3/8 inch, R1, R2, R3, PE",
+            nilai_tkdn=51.47,
+            tipe="",
+        )])
+
+        stats = enrich_tipe_in_db(db, "PT Test Corp", [_scraped(
+            nama_produk="Carbon Steel Seamless Casing",
+            spesifikasi="API 5CT, Grade N80/N80Q, Diameter 4 1/2 - 13 3/8 inch, R1, R2, R3, PE",
+            tipe="Casing Plain End",
+            nilai_tkdn_str="51.47",
+        )])
+
+        assert stats["updated"] == 1
+        assert stats["inserted"] == 0
+        assert _count(db) == 1
+        assert _rows(db)[0]["tipe"] == "Casing Plain End"
+
     def test_keeps_bulk_export_spelling_when_cloning_variants(
         self, db: sqlite3.Connection, cert_factory: Any
     ) -> None:

@@ -494,6 +494,57 @@ class TestUpsertP3dnRowsNormalizedMatching:
         assert row["p3dn_search_last_seen"] == TODAY_STR
         assert row["p3dn_not_found_since"] is None
 
+    def test_fuzzy_fallback_matches_reworded_spec(
+        self, db: sqlite3.Connection, cert_factory: Any
+    ) -> None:
+        """Regression: the same certificate is worded differently across
+        sources ('Dia.' vs 'Diameter'), which defeats the normalized key.
+        With identical TKDN the fuzzy fallback must match, not duplicate."""
+        merge_and_upsert(db, [cert_factory(
+            nama_produk="Heat Treatment Process - Carbon Steel Seamless Casing",
+            spesifikasi=("API 5CT, Grade N80/N80Q, L80, C90, R95, T95, P110, "
+                         "Q125, Dia. 4 1/2 – 13 3/8 inch, R1, R2, R3, PE"),
+            nilai_tkdn=35.53,
+            tipe="",
+        )])
+
+        stats = upsert_p3dn_rows(
+            db, "PT Test Corp",
+            [{"nama_produk": "Heat Treatment Process - Carbon Steel Seamless Casing",
+              "spesifikasi": ("API 5CT, Grade N80/N80Q, L80, C90, R95, T95, P110, "
+                              "Q125, Diameter 4 1/2 - 13 3/8 inch, R1, R2, R3, PE"),
+              "nilai_tkdn": 35.53}],
+            TODAY,
+        )
+
+        assert stats["inserted"] == 0
+        assert stats["updated"] == 1
+        assert _count(db) == 1
+
+    def test_fuzzy_fallback_does_not_merge_distinct_certificates(
+        self, db: sqlite3.Connection, cert_factory: Any
+    ) -> None:
+        """'Heat Treatment' vs 'Non-Heat Treatment' variants are DISTINCT
+        certificates that score ~92 on token_set_ratio — below the threshold.
+        Even with identical TKDN they must import as separate rows."""
+        merge_and_upsert(db, [cert_factory(
+            nama_produk="Carbon Steel Seamless Line Pipe, Heat Treatment",
+            spesifikasi="API 5L, Gr. BQ, X42N/Q",
+            nilai_tkdn=50.91,
+            tipe="",
+        )])
+
+        stats = upsert_p3dn_rows(
+            db, "PT Test Corp",
+            [{"nama_produk": "Carbon Steel Seamless Line Pipe, Non-Heat Treatment",
+              "spesifikasi": "API 5L, Gr. BQ, X42N/Q",
+              "nilai_tkdn": 50.91}],
+            TODAY,
+        )
+
+        assert stats["inserted"] == 1
+        assert _count(db) == 2
+
     def test_heals_skeleton_duplicate_created_by_old_matching(
         self, db: sqlite3.Connection, cert_factory: Any
     ) -> None:

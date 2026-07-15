@@ -13,7 +13,12 @@ import httpx
 from bs4 import BeautifulSoup
 
 from .constants import DEFAULT_USER_AGENT, TIPE_ENRICH_TKDN_MATCH_TOLERANCE
-from .textnorm import clean_cell_text, match_key, parse_tkdn_percent
+from .textnorm import (
+    clean_cell_text,
+    equivalent_text_indices,
+    match_key,
+    parse_tkdn_percent,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -236,6 +241,23 @@ def enrich_tipe_in_db(
             for c in index.get((match_key(nama_produk), match_key(spesifikasi)), [])
             if not c.get("_deleted")
         ]
+        if not candidates and tkdn_val is not None:
+            # Token-equivalence fallback for cross-source rewordings ("Dia."
+            # vs "Diameter"), gated on same company + same TKDN — see
+            # textnorm.texts_equivalent for why this is not a fuzzy score.
+            pool = [
+                c
+                for rows_ in index.values()
+                for c in rows_
+                if not c.get("_deleted")
+                and c["nilai_tkdn"] is not None
+                and abs(c["nilai_tkdn"] - tkdn_val) < TIPE_ENRICH_TKDN_MATCH_TOLERANCE
+            ]
+            hits = equivalent_text_indices(
+                f"{nama_produk} {spesifikasi}",
+                [f"{c['nama_produk']} {c['spesifikasi']}" for c in pool],
+            )
+            candidates = [pool[i] for i in hits]
 
         # Existing row with same (company, product, spec, tkdn_value) that has
         # tipe='' (not yet enriched)
