@@ -4,11 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project summary
 
-A Python web app that downloads, parses, deduplicates, and indexes Indonesia's TKDN certificate dataset from Kemenperin P3DN. It exposes a fast typo-tolerant search UI for procurement use at PT Pertamina Hulu Rokan (PHR).
+A Python web app that downloads, parses, deduplicates, and indexes Indonesia's TKDN certificate dataset from Kemenperin P3DN. It exposes a fast typo-tolerant search UI for procurement use in a KKKS environment.
 
 Primary user: procurement analyst doing pra-qualification and BAHP drafting under PTK-007 / Pedoman A7-001.
-
-Refer to `PRD.md` for the full product spec.
 
 ## Stack
 
