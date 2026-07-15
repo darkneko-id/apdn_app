@@ -19,7 +19,7 @@ from .constants import (
     P3DN_SEARCH_TKDN_MATCH_TOLERANCE,
     P3DN_SEARCH_URL,
 )
-from .textnorm import clean_cell_text, match_key
+from .textnorm import clean_cell_text, equivalent_text_indices, match_key
 
 logger = logging.getLogger(__name__)
 
@@ -352,6 +352,25 @@ def upsert_p3dn_rows(
             for r in index.get((match_key(produk), match_key(spec)), [])
             if r["id"] not in deleted_ids
         ]
+        if not candidates and nilai_tkdn is not None:
+            # Token-equivalence fallback: the excel export and search.php
+            # sometimes word the same certificate differently ("Dia." vs
+            # "Diameter", reordered product names), which defeats the
+            # normalized key. Gated on same company + same TKDN so
+            # distinct-but-similar certificates don't merge.
+            pool = [
+                r
+                for rows_ in index.values()
+                for r in rows_
+                if r["id"] not in deleted_ids
+                and r["nilai_tkdn"] is not None
+                and abs(r["nilai_tkdn"] - nilai_tkdn) < P3DN_SEARCH_TKDN_MATCH_TOLERANCE
+            ]
+            hits = equivalent_text_indices(
+                f"{produk} {spec}",
+                [f"{r['nama_produk']} {r['spesifikasi']}" for r in pool],
+            )
+            candidates = [pool[i] for i in hits]
         if nilai_tkdn is not None:
             matches = [
                 r

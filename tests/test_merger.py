@@ -164,6 +164,59 @@ class TestTipePreservation:
 
         assert _count(db) == 2  # no tipe='' row added alongside enriched variants
 
+    def test_backfilled_merek_preserved_when_reimported_with_empty_merek(
+        self, db: sqlite3.Connection, cert_factory: Any
+    ) -> None:
+        """Regression: Update Tipe backfills merek (and tipe) from search.php
+        onto a bulk row whose excel Merk was empty. The next scheduled
+        re-download of that excel row (merek='') must update the enriched row
+        in place — not re-insert the redundant tipe=''/merek='' skeleton."""
+        merge_and_upsert(db, [cert_factory(tipe="", merek="")])
+
+        # Simulate P3DN search enrichment backfilling both fields
+        db.execute(
+            "UPDATE tkdn_certificate SET tipe = 'SAW', merek = 'BKS' "
+            "WHERE nama_produk = ?",
+            ("Centrifugal Pump",),
+        )
+        db.commit()
+
+        merge_and_upsert(db, [cert_factory(tipe="", merek="")])
+
+        assert _count(db) == 1
+        row = _fetch_one(db, nama_produk="Centrifugal Pump")
+        assert row is not None
+        assert row["tipe"] == "SAW"
+        assert row["merek"] == "BKS"
+
+    def test_backfilled_merek_only_preserved_on_reimport(
+        self, db: sqlite3.Connection, cert_factory: Any
+    ) -> None:
+        """Same as above but only merek was backfilled (tipe still '')."""
+        merge_and_upsert(db, [cert_factory(tipe="", merek="")])
+        db.execute(
+            "UPDATE tkdn_certificate SET merek = 'BKS' WHERE nama_produk = ?",
+            ("Centrifugal Pump",),
+        )
+        db.commit()
+
+        merge_and_upsert(db, [cert_factory(tipe="", merek="")])
+
+        assert _count(db) == 1
+        row = _fetch_one(db, nama_produk="Centrifugal Pump")
+        assert row is not None
+        assert row["merek"] == "BKS"
+
+    def test_distinct_excel_merek_still_creates_separate_row(
+        self, db: sqlite3.Connection, cert_factory: Any
+    ) -> None:
+        """A NON-empty excel merek that differs from the stored one is a
+        distinct certificate — the relaxed pre-check must not swallow it."""
+        merge_and_upsert(db, [cert_factory(tipe="", merek="BrandX")])
+        merge_and_upsert(db, [cert_factory(tipe="", merek="BrandY")])
+
+        assert _count(db) == 2
+
     def test_nonempty_tipe_from_source_creates_distinct_row(
         self, db: sqlite3.Connection, cert_factory: Any
     ) -> None:

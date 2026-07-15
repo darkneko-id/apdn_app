@@ -48,7 +48,15 @@ def merge_and_upsert(conn: sqlite3.Connection, rows: list[dict[str, Any]]) -> di
             ingested_at = excluded.ingested_at
     """
 
-    # SQL for updating metadata on enriched tipe variants when P3DN re-imports tipe=''.
+    # SQL for updating metadata on enriched rows when P3DN re-imports a tipe=''
+    # bulk row. Enrichment (Update Tipe) may have backfilled tipe AND/OR merek
+    # onto the stored row, so:
+    #   - an empty excel merek must match any stored merek (backfilled), while
+    #     a non-empty excel merek still requires equality;
+    #   - rows enriched in EITHER field count (tipe != '' OR merek differs);
+    #     rows identical in both are left to the INSERT's ON CONFLICT clause.
+    # Without this, every scheduled re-download would re-insert the redundant
+    # tipe=''/merek='' row next to its enriched version.
     _update_enriched_sql = """
         UPDATE tkdn_certificate SET
             kode_hs = :kode_hs,
@@ -62,9 +70,9 @@ def merge_and_upsert(conn: sqlite3.Connection, rows: list[dict[str, Any]]) -> di
         WHERE nama_perusahaan = :nama_perusahaan
           AND nama_produk = :nama_produk
           AND spesifikasi = :spesifikasi
-          AND merek = :merek
+          AND (merek = :merek OR :merek = '')
           AND ABS(COALESCE(nilai_tkdn, -999) - COALESCE(:nilai_tkdn, -999)) < 0.1
-          AND tipe != ''
+          AND (tipe != '' OR merek != :merek)
     """
 
     for row in rows:
