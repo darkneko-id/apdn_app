@@ -159,6 +159,40 @@ class TestColumnFallbackNoCollision:
         assert {r["nama_produk"] for r in rows} == {"Produk Andalan", "Produk Lainnya"}
 
 
+class TestScrapeCapturesTipeMerek:
+    async def test_tipe_and_merek_columns_are_scraped(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """search.php renders Tipe and Merk columns; they are part of the
+        certificate's identity and must reach the row payload ('-' → '')."""
+        html = """
+        <table>
+          <tr><th>No</th><th>Perusahaan</th><th>Kelompok Barang</th>
+              <th>Jenis Produk</th><th>Spesifikasi</th><th>Tipe</th>
+              <th>Merk</th><th>Nilai TKDN</th></tr>
+          <tr><td>1</td><td>PT X</td><td>Logam</td><td>Line Pipe</td>
+              <td>API 5L</td><td>Seamless</td><td>1ST</td><td>50.91</td></tr>
+          <tr><td>2</td><td>PT X</td><td>Logam</td><td>Line Pipe</td>
+              <td>API 5L</td><td>-</td><td>-</td><td>44.83</td></tr>
+        </table>
+        """
+
+        async def fake_get(
+            self: httpx.AsyncClient, url: str, params: dict[str, str] | None = None, **kwargs: Any
+        ) -> _FakeResponse:
+            return _FakeResponse(html)
+
+        monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+
+        rows = await scrape_p3dn_search("PT X", delay_seconds=0)
+
+        assert len(rows) == 2
+        assert rows[0]["tipe"] == "Seamless"
+        assert rows[0]["merek"] == "1ST"
+        assert rows[1]["tipe"] == ""  # '-' placeholder means no data
+        assert rows[1]["merek"] == ""
+
+
 TODAY = date(2026, 6, 25)
 TODAY_STR = "2026-06-25"
 
@@ -499,6 +533,121 @@ class TestUpsertP3dnRowsNormalizedMatching:
         assert row["masa_berlaku_akhir"] is not None  # the bulk-export row survived
         assert row["p3dn_search_last_seen"] == TODAY_STR
         assert row["p3dn_not_found_since"] is None
+
+    def test_heals_skeleton_duplicate_whose_tipe_was_corrupted(
+        self, db: sqlite3.Connection, cert_factory: Any
+    ) -> None:
+        """Regression: a skeleton row (no bulk provenance) that had its tipe
+        wrongly set by a stale enrichment match must still be recognized as
+        the duplicate to remove — tipe being non-empty must not make it look
+        like the authoritative row. Its tipe is merged onto the survivor."""
+        merge_and_upsert(db, [cert_factory(
+            nama_produk="Casing Pipe", spesifikasi="API 5CT – Grade L80",
+            nilai_tkdn=51.47, tipe="",
+        )])
+        db.execute(
+            """INSERT INTO tkdn_certificate
+               (nama_perusahaan, nama_produk, spesifikasi, merek, tipe, nilai_tkdn,
+                tahun_sumber, masa_berlaku_akhir, p3dn_search_last_seen)
+               VALUES ('PT Test Corp', 'Casing Pipe', 'API 5CT - Grade L80', '',
+                       'Casing Plain End', 51.47, NULL, NULL, '2026-06-01')"""
+        )
+        db.commit()
+        assert _count(db) == 2
+
+        stats = upsert_p3dn_rows(
+            db, "PT Test Corp",
+            [{"nama_produk": "Casing Pipe", "spesifikasi": "API 5CT - Grade L80",
+              "nilai_tkdn": 51.47}],
+            TODAY,
+        )
+
+        assert stats["deduped"] == 1
+        assert _count(db) == 1
+        row = _fetch_one(db, nama_produk="Casing Pipe")
+        assert row is not None
+        assert row["tipe"] == "Casing Plain End"  # recovered, not lost
+        assert row["masa_berlaku_akhir"] is not None  # bulk-export row survived
+        assert row["p3dn_search_last_seen"] == TODAY_STR
+
+    def test_rows_differing_only_in_tipe_import_as_separate_rows(
+        self, db: sqlite3.Connection, cert_factory: Any
+    ) -> None:
+        """Regression (PT Bumi Kaya Steel Industries): P3DN search shows
+        multiple certificates identical except for Tipe, while the bulk export
+        has a single tipe='' row. The first scraped tipe backfills the bulk
+        row; the others must import as new variant rows — previously all of
+        them silently 'matched' the one bulk row and nothing was imported."""
+        merge_and_upsert(db, [cert_factory(
+            nama_produk="Pipa Baja", spesifikasi="API 5L",
+            nilai_tkdn=30.0, tipe="", merek="",
+        )])
+
+        stats = upsert_p3dn_rows(
+            db, "PT Test Corp",
+            [
+                {"nama_produk": "Pipa Baja", "spesifikasi": "API 5L",
+                 "nilai_tkdn": 30.0, "tipe": "ERW", "merek": ""},
+                {"nama_produk": "Pipa Baja", "spesifikasi": "API 5L",
+                 "nilai_tkdn": 30.0, "tipe": "SAW", "merek": ""},
+                {"nama_produk": "Pipa Baja", "spesifikasi": "API 5L",
+                 "nilai_tkdn": 30.0, "tipe": "HFW", "merek": ""},
+            ],
+            TODAY,
+        )
+
+        assert stats["updated"] == 1  # bulk row, tipe backfilled to ERW
+        assert stats["inserted"] == 2  # SAW + HFW variants
+        rows = _fetch_all(db, "Pipa Baja")
+        assert {r["tipe"] for r in rows} == {"ERW", "SAW", "HFW"}
+        assert all(r["p3dn_search_last_seen"] == TODAY_STR for r in rows)
+        assert all(r["p3dn_not_found_since"] is None for r in rows)
+
+    def test_tipe_variant_import_is_idempotent(
+        self, db: sqlite3.Connection, cert_factory: Any
+    ) -> None:
+        merge_and_upsert(db, [cert_factory(
+            nama_produk="Pipa Baja", spesifikasi="API 5L",
+            nilai_tkdn=30.0, tipe="", merek="",
+        )])
+        scraped = [
+            {"nama_produk": "Pipa Baja", "spesifikasi": "API 5L",
+             "nilai_tkdn": 30.0, "tipe": "ERW", "merek": ""},
+            {"nama_produk": "Pipa Baja", "spesifikasi": "API 5L",
+             "nilai_tkdn": 30.0, "tipe": "SAW", "merek": ""},
+        ]
+
+        upsert_p3dn_rows(db, "PT Test Corp", scraped, TODAY)
+        stats = upsert_p3dn_rows(db, "PT Test Corp", scraped, TODAY)
+
+        assert stats["inserted"] == 0
+        assert stats["deduped"] == 0
+        assert stats["updated"] == 2
+        assert _count(db) == 2
+
+    def test_rows_differing_only_in_merek_import_as_separate_rows(
+        self, db: sqlite3.Connection, cert_factory: Any
+    ) -> None:
+        merge_and_upsert(db, [cert_factory(
+            nama_produk="Gate Valve", spesifikasi="Class 150",
+            nilai_tkdn=28.0, tipe="", merek="BrandX",
+        )])
+
+        stats = upsert_p3dn_rows(
+            db, "PT Test Corp",
+            [
+                {"nama_produk": "Gate Valve", "spesifikasi": "Class 150",
+                 "nilai_tkdn": 28.0, "tipe": "", "merek": "BRANDX"},
+                {"nama_produk": "Gate Valve", "spesifikasi": "Class 150",
+                 "nilai_tkdn": 28.0, "tipe": "", "merek": "BrandY"},
+            ],
+            TODAY,
+        )
+
+        assert stats["updated"] == 1  # BRANDX matches BrandX case-insensitively
+        assert stats["inserted"] == 1  # BrandY is a distinct certificate
+        rows = _fetch_all(db, "Gate Valve")
+        assert {r["merek"] for r in rows} == {"BrandX", "BrandY"}
 
     def test_distinct_tkdn_values_still_insert_separate_rows(
         self, db: sqlite3.Connection, cert_factory: Any
