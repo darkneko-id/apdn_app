@@ -15,6 +15,8 @@ from bs4 import BeautifulSoup
 from .constants import DEFAULT_USER_AGENT, TIPE_ENRICH_TKDN_MATCH_TOLERANCE
 from .textnorm import (
     clean_cell_text,
+    company_key,
+    company_search_term,
     equivalent_text_indices,
     match_key,
     parse_tkdn_percent,
@@ -49,9 +51,12 @@ async def scrape_tipe_for_company(
                 url = TKDN_BASE_URL + "/" + next_path.lstrip("/")
                 r = await client.get(url, headers=headers)
             else:
+                # Prefix-stripped query: the same company can be registered as
+                # "PT X" and "PT. X" — the full stored name only matches one
+                # spelling. enrich_tipe_in_db filters rows via company_key().
                 r = await client.get(
                     TKDN_SEARCH_URL,
-                    params={"where": "perush", "what": company_name},
+                    params={"where": "perush", "what": company_search_term(company_name)},
                     headers=headers,
                 )
 
@@ -226,7 +231,15 @@ def enrich_tipe_in_db(
         key = (match_key(db_r["nama_produk"]), match_key(db_r["spesifikasi"]))
         index.setdefault(key, []).append(dict(db_r))
 
+    target_company_key = company_key(company_name)
+
     for row in scraped_rows:
+        # The scrape may return other companies matching the prefix-stripped
+        # query — never enrich this company's rows from a foreign row.
+        scraped_company = row.get("nama_perusahaan")
+        if scraped_company and company_key(scraped_company) != target_company_key:
+            continue
+
         tkdn_val = parse_tkdn_percent(row.get("nilai_tkdn_str"))
 
         tipe = clean_cell_text(row.get("tipe") or "")

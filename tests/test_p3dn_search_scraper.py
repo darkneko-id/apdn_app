@@ -100,8 +100,10 @@ class TestScrapePaginationPreservesSearchParams:
         rows = await scrape_p3dn_search("PT X", delay_seconds=0)
 
         assert len(calls) == 2
-        assert calls[0] == {"where": "perush", "what": "PT X"}
-        assert calls[1] == {"where": "perush", "what": "PT X", "hal": "2"}
+        # Query is the prefix-stripped name ("PT X" → "X") so that all
+        # registered spellings ("PT X" / "PT. X") match on the website.
+        assert calls[0] == {"where": "perush", "what": "X"}
+        assert calls[1] == {"where": "perush", "what": "X", "hal": "2"}
         assert len(rows) == 2
 
 
@@ -620,6 +622,77 @@ class TestUpsertP3dnRowsNormalizedMatching:
         assert row["tipe"] == "Casing Plain End"  # recovered, not lost
         assert row["masa_berlaku_akhir"] is not None  # bulk-export row survived
         assert row["p3dn_search_last_seen"] == TODAY_STR
+
+    def test_imports_rows_registered_under_dotted_company_spelling(
+        self, db: sqlite3.Connection, cert_factory: Any
+    ) -> None:
+        """Regression (PT Bumi Kaya Steel Industries): P3DN registers the same
+        company as both 'PT Bumi Kaya...' and 'PT. Bumi Kaya...'. Rows under
+        the dotted spelling must still be recognized as this company and
+        imported — previously the site query with the exact stored name never
+        even returned them."""
+        merge_and_upsert(db, [cert_factory(
+            nama_perusahaan="PT Bumi Kaya Steel Industries",
+            nama_produk="Seamless Pipe",
+            spesifikasi="Threaded & Beveled pipe, size 1/2 inch - 24 inch",
+            nilai_tkdn=10.29, tipe="A53, A106, A335, A333", merek="BUMI KAYA",
+        )])
+
+        stats = upsert_p3dn_rows(
+            db, "PT Bumi Kaya Steel Industries",
+            [
+                {"nama_perusahaan": "PT Bumi Kaya Steel Industries",
+                 "nama_produk": "Seamless Pipe",
+                 "spesifikasi": "Threaded & Beveled pipe, size 1/2 inch - 24 inch",
+                 "nilai_tkdn": 10.29, "tipe": "A53, A106, A335, A333",
+                 "merek": "BUMI KAYA"},
+                {"nama_perusahaan": "PT. Bumi Kaya Steel Industries",
+                 "nama_produk": "Pipa Baja",
+                 "spesifikasi": "Size 24 inch – 60 inch ; ASTM A252 Gr 2/A53",
+                 "nilai_tkdn": 53.85, "tipe": "Pipa SAW", "merek": "BUMI KAYA"},
+                {"nama_perusahaan": "PT. Bumi Kaya Steel Industries",
+                 "nama_produk": "Pipa Baja",
+                 "spesifikasi": "Size ½ inch – 12 inch ; ASTM A252 Gr 2/A53",
+                 "nilai_tkdn": 58.30, "tipe": "Pipa ERW", "merek": "BUMI KAYA"},
+            ],
+            TODAY,
+        )
+
+        assert stats["updated"] == 1
+        assert stats["inserted"] == 2
+        rows = db.execute(
+            "SELECT nama_perusahaan, nama_produk, tipe FROM tkdn_certificate"
+        ).fetchall()
+        assert len(rows) == 3
+        # Imported variants are stored under the app's canonical company name
+        assert all(r["nama_perusahaan"] == "PT Bumi Kaya Steel Industries" for r in rows)
+        assert {r["tipe"] for r in rows} == {"A53, A106, A335, A333", "Pipa SAW", "Pipa ERW"}
+
+    def test_foreign_company_rows_from_broad_query_are_ignored(
+        self, db: sqlite3.Connection, cert_factory: Any
+    ) -> None:
+        """The prefix-stripped query can return OTHER companies containing the
+        substring; their rows must be dropped, not imported or used to mark
+        this company's records as absent."""
+        merge_and_upsert(db, [cert_factory(
+            nama_perusahaan="PT Baja Utama", nama_produk="Pipa Baja",
+            spesifikasi="", nilai_tkdn=40.0, tipe="",
+        )])
+
+        stats = upsert_p3dn_rows(
+            db, "PT Baja Utama",
+            [{"nama_perusahaan": "PT Baja Utama Perkasa",  # different company!
+              "nama_produk": "Flange", "spesifikasi": "", "nilai_tkdn": 22.0}],
+            TODAY,
+        )
+
+        assert stats["inserted"] == 0
+        assert _count(db) == 1
+        row = _fetch_one(db, nama_produk="Pipa Baja")
+        assert row is not None
+        # All scraped rows were foreign → treat as an empty scrape: no
+        # last_seen update and NO not-found marking either.
+        assert row["p3dn_not_found_since"] is None
 
     def test_rows_differing_only_in_tipe_import_as_separate_rows(
         self, db: sqlite3.Connection, cert_factory: Any

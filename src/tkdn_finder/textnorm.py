@@ -37,6 +37,35 @@ def match_key(value: str | None) -> str:
     return _WHITESPACE_RE.sub("", _DASH_RE.sub("-", value)).casefold()
 
 
+# Leading legal-entity prefixes ("PT." / "PT" / "CV." ...) — P3DN registers
+# the same company under inconsistent spellings of these.
+_LEGAL_ENTITY_PREFIX_RE = re.compile(r"^(?:pt|cv|ud|pd)\.?\s+", re.IGNORECASE)
+_NON_ALNUM_RE = re.compile(r"[^0-9a-z]+")
+
+
+def company_search_term(name: str | None) -> str:
+    """Distinctive part of a company name to use as a website search query.
+
+    P3DN's search.php does substring matching, and the same company can be
+    registered as both "PT Bumi Kaya ..." and "PT. Bumi Kaya ..." — querying
+    with the full stored name only returns one spelling. Dropping the
+    legal-entity prefix makes the query match all spellings; callers must
+    then filter results back down with company_key().
+    """
+    if not name:
+        return ""
+    stripped = _LEGAL_ENTITY_PREFIX_RE.sub("", clean_cell_text(name))
+    return stripped or clean_cell_text(name)
+
+
+def company_key(name: str | None) -> str:
+    """Company-name equality key: punctuation-, case-, spacing- and
+    legal-entity-prefix-insensitive ("PT. Bumi Kaya" == "PT Bumi Kaya")."""
+    if not name:
+        return ""
+    return _NON_ALNUM_RE.sub("", company_search_term(name).casefold())
+
+
 def _is_abbrev_pair(a: str, b: str) -> bool:
     """True when one token is a prefix-abbreviation of the other ('dia' ~
     'diameter', 'gr' ~ 'grade'). Requires ≥2 chars so noise can't pair up."""

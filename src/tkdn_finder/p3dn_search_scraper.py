@@ -19,7 +19,13 @@ from .constants import (
     P3DN_SEARCH_TKDN_MATCH_TOLERANCE,
     P3DN_SEARCH_URL,
 )
-from .textnorm import clean_cell_text, equivalent_text_indices, match_key
+from .textnorm import (
+    clean_cell_text,
+    company_key,
+    company_search_term,
+    equivalent_text_indices,
+    match_key,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +103,11 @@ async def scrape_p3dn_search(
     headers = {"User-Agent": DEFAULT_USER_AGENT}
     results: list[dict[str, Any]] = []
     page = 1
-    base_params = {"where": "perush", "what": company_name}
+    # Query with the distinctive part of the name (no "PT."/"PT" prefix):
+    # P3DN registers the same company under inconsistent prefix spellings,
+    # and search.php substring-matches — the full stored name would only
+    # return one spelling's rows. Callers filter results via company_key().
+    base_params = {"where": "perush", "what": company_search_term(company_name)}
 
     async with httpx.AsyncClient(
         follow_redirects=True, timeout=30, verify=verify_ssl
@@ -307,6 +317,18 @@ def upsert_p3dn_rows(
     stats = {"updated": 0, "inserted": 0, "skipped": 0, "deduped": 0}
     today_str = today.isoformat()
     now_str = datetime.now(timezone.utc).isoformat()
+
+    # The scrape queries with the prefix-stripped name (see scrape_p3dn_search),
+    # which can also return OTHER companies containing that substring. Keep
+    # only rows whose scraped company name is this company modulo punctuation/
+    # prefix spelling ("PT." vs "PT") — and never attribute foreign rows here.
+    target_key = company_key(db_company_name)
+    rows = [
+        r
+        for r in rows
+        if not r.get("nama_perusahaan")
+        or company_key(r["nama_perusahaan"]) == target_key
+    ]
 
     def _is_minimal(r: dict[str, Any]) -> bool:
         """True for skeleton rows this importer created (no bulk-export provenance).
