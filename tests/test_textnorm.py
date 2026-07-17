@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
-from tkdn_finder.textnorm import match_key, parse_tkdn_percent, texts_equivalent
+from tkdn_finder.textnorm import (
+    company_key,
+    company_search_term,
+    match_key,
+    parse_tkdn_percent,
+    texts_equivalent,
+)
 
 
 class TestMatchKey:
@@ -20,6 +26,36 @@ class TestParseTkdnPercent:
         assert parse_tkdn_percent("51.47") == 51.47
         assert parse_tkdn_percent("-") is None
         assert parse_tkdn_percent(None) is None
+
+
+class TestCompanyKey:
+    def test_dotted_and_plain_prefix_spellings_are_equal(self) -> None:
+        assert (
+            company_key("PT Bumi Kaya Steel Industries")
+            == company_key("PT. Bumi Kaya Steel Industries")
+            == company_key("PT.  BUMI KAYA STEEL INDUSTRIES")
+        )
+
+    def test_different_companies_differ(self) -> None:
+        assert company_key("PT Baja Utama") != company_key("PT Baja Utama Perkasa")
+
+    def test_empty(self) -> None:
+        assert company_key(None) == ""
+        assert company_key("") == ""
+
+
+class TestCompanySearchTerm:
+    def test_strips_legal_entity_prefix(self) -> None:
+        assert company_search_term("PT Bumi Kaya Steel Industries") == "Bumi Kaya Steel Industries"
+        assert company_search_term("PT. Artas Energi Petrogas") == "Artas Energi Petrogas"
+        assert company_search_term("CV. Maju Jaya") == "Maju Jaya"
+
+    def test_name_without_prefix_unchanged(self) -> None:
+        assert company_search_term("Bumi Kaya Steel") == "Bumi Kaya Steel"
+
+    def test_prefix_only_name_falls_back_to_full_name(self) -> None:
+        # Pathological but must not produce an empty query
+        assert company_search_term("PT ") == "PT"
 
 
 class TestTextsEquivalent:
