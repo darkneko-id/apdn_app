@@ -27,21 +27,21 @@
                     <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-green-400/20 text-green-100 border border-green-400/30">
                         Berlaku
                     </span>
-                    {% elif validity_label == 'expiring' %}
-                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-yellow-400/20 text-yellow-100 border border-yellow-400/30">
-                        Segera Habis
-                    </span>
-                    {% elif validity_label == 'expired' %}
-                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-red-400/20 text-red-100 border border-red-400/30">
-                        Kadaluarsa
-                    </span>
-                    {% elif validity_label == 'p3dn_active' %}
+                    {% elif validity_label == 'web_active' %}
                     <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-blue-400/20 text-blue-100 border border-blue-400/30">
-                        P3DN Aktif
+                        Berlaku di Web P3DN
                     </span>
-                    {% elif validity_label == 'p3dn_not_found' %}
+                    {% elif validity_label == 'web_lost' %}
                     <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-orange-400/20 text-orange-100 border border-orange-400/30">
-                        Tidak di P3DN
+                        Tidak ditemukan lagi di web P3DN
+                    </span>
+                    {% elif validity_label == 'not_valid' %}
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-red-400/20 text-red-100 border border-red-400/30">
+                        Tidak Berlaku
+                    </span>
+                    {% elif validity_label == 'expired_on_web' %}
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-amber-400/20 text-amber-100 border border-amber-400/30">
+                        Kadaluarsa tapi masih di web — verifikasi
                     </span>
                     {% else %}
                     <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-gray-400/20 text-gray-100 border border-gray-400/30">
@@ -165,7 +165,7 @@
                 <p class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Terakhir di P3DN</p>
                 <p class="mt-1 text-gray-900 dark:text-gray-100">
                     {{ cert.p3dn_search_last_seen.strftime('%d %B %Y') }}
-                    {% if validity_label == 'p3dn_not_found' %}
+                    {% if cert.p3dn_not_found_since %}
                     <span class="ml-1 text-xs text-orange-600 dark:text-orange-400">(tidak muncul saat ini)</span>
                     {% endif %}
                 </p>

@@ -18,7 +18,6 @@ from ..constants import (
     SEARCH_RESULT_LIMIT_DEFAULT,
     SEARCH_RESULT_LIMIT_MAX,
     TKDN_DEFAULT_MIN_FILTER,
-    VALIDITY_EXPIRING_SOON_DAYS,
 )
 from ..db import get_connection, get_kbli_list, get_last_refresh_ts, get_year_list
 from ..models import CertificateRow, SearchResponse, compute_validity_label
@@ -126,7 +125,7 @@ async def search_htmx(
 
     # Tag each row with validity status label
     tagged_rows = [
-        (cert, compute_validity_label(cert, today, VALIDITY_EXPIRING_SOON_DAYS))
+        (cert, compute_validity_label(cert, today))
         for cert in cert_rows
     ]
 

@@ -11,7 +11,6 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from ..config import get_settings
-from ..constants import VALIDITY_EXPIRING_SOON_DAYS
 from ..db import get_certificate_by_id, get_connection
 from ..models import CertificateRow, compute_validity_label
 
@@ -36,7 +35,7 @@ async def cert_detail(cert_id: int, request: Request) -> HTMLResponse:
 
     today = date.today()
     cert = CertificateRow.from_row(row, today)
-    validity_label = compute_validity_label(cert, today, VALIDITY_EXPIRING_SOON_DAYS)
+    validity_label = compute_validity_label(cert, today)
 
     return templates.TemplateResponse(
         request,
