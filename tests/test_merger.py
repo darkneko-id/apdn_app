@@ -294,3 +294,36 @@ class TestTransaction:
         row = _fetch_one(db, nama_produk="Centrifugal Pump")
         assert row is not None
         assert row["ingested_at"] is not None
+
+
+# ---------------------------------------------------------------------------
+# Company-name prefix canonicalisation (PT. == PT, CV. == CV, ...)
+# ---------------------------------------------------------------------------
+
+class TestCompanyPrefixDedup:
+    def test_dotted_and_plain_prefix_dedupe_to_one_row(
+        self, db: sqlite3.Connection, cert_factory: Any
+    ) -> None:
+        merge_and_upsert(db, [cert_factory(nama_perusahaan="PT. Bumi Kaya Steel")])
+        stats = merge_and_upsert(db, [cert_factory(nama_perusahaan="PT Bumi Kaya Steel")])
+
+        assert _count(db) == 1  # same company despite the dot
+        assert stats["inserted"] == 0
+        assert stats["updated"] == 1
+
+    def test_stored_name_is_canonical(
+        self, db: sqlite3.Connection, cert_factory: Any
+    ) -> None:
+        merge_and_upsert(db, [cert_factory(nama_perusahaan="pt.  Bumi Kaya Steel")])
+
+        row = _fetch_one(db, nama_produk="Centrifugal Pump")
+        assert row is not None
+        assert row["nama_perusahaan"] == "PT Bumi Kaya Steel"
+
+    def test_distinct_companies_stay_separate(
+        self, db: sqlite3.Connection, cert_factory: Any
+    ) -> None:
+        merge_and_upsert(db, [cert_factory(nama_perusahaan="PT Bumi Kaya Steel")])
+        merge_and_upsert(db, [cert_factory(nama_perusahaan="PT Bumi Kaya Steel Perkasa")])
+
+        assert _count(db) == 2

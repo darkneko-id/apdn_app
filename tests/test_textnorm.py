@@ -6,6 +6,7 @@ from tkdn_finder.textnorm import (
     company_key,
     company_search_term,
     match_key,
+    normalize_company_name,
     parse_tkdn_percent,
     texts_equivalent,
 )
@@ -56,6 +57,41 @@ class TestCompanySearchTerm:
     def test_prefix_only_name_falls_back_to_full_name(self) -> None:
         # Pathological but must not produce an empty query
         assert company_search_term("PT ") == "PT"
+
+
+class TestNormalizeCompanyName:
+    def test_dotted_and_plain_prefix_collapse_to_one(self) -> None:
+        canonical = "PT Bumi Kaya Steel"
+        assert normalize_company_name("PT. Bumi Kaya Steel") == canonical
+        assert normalize_company_name("PT Bumi Kaya Steel") == canonical
+        assert normalize_company_name("PT.Bumi Kaya Steel") == canonical
+        assert normalize_company_name("PT.  Bumi Kaya Steel") == canonical
+
+    def test_prefix_case_is_normalised(self) -> None:
+        assert normalize_company_name("pt. bumi kaya steel") == "PT bumi kaya steel"
+        assert normalize_company_name("Pt Bumi Kaya Steel") == "PT Bumi Kaya Steel"
+
+    def test_all_recognised_prefixes(self) -> None:
+        assert normalize_company_name("CV. Maju Jaya") == "CV Maju Jaya"
+        assert normalize_company_name("UD Sumber Rejeki") == "UD Sumber Rejeki"
+        assert normalize_company_name("PD. Karya Baru") == "PD Karya Baru"
+        assert normalize_company_name("Fa. Sinar Abadi") == "FA Sinar Abadi"
+        assert normalize_company_name("NV Dwi Warna") == "NV Dwi Warna"
+
+    def test_name_without_prefix_only_collapses_whitespace(self) -> None:
+        assert normalize_company_name("Bumi  Kaya   Steel") == "Bumi Kaya Steel"
+
+    def test_prefix_fused_into_word_is_not_a_prefix(self) -> None:
+        # "PTPN" (Perkebunan Nusantara) must not be treated as a "PT" prefix.
+        assert normalize_company_name("PTPN Nusantara") == "PTPN Nusantara"
+
+    def test_prefix_only_name_gains_no_trailing_space(self) -> None:
+        assert normalize_company_name("PT.") == "PT"
+        assert normalize_company_name("PT ") == "PT"
+
+    def test_empty_and_none(self) -> None:
+        assert normalize_company_name(None) is None
+        assert normalize_company_name("") == ""
 
 
 class TestTextsEquivalent:

@@ -43,6 +43,19 @@ HTML_COLUMN_MAP: dict[str, str] = {
 REQUIRED_FIELDS: tuple[str, ...] = ("nama_perusahaan", "nama_produk")
 DATE_FORMAT = "%Y-%m-%d"
 
+# Indonesian legal-entity abbreviations that appear as a company-name prefix.
+# P3DN registers the same company under inconsistent spellings of these — with
+# or without a trailing dot ("PT." vs "PT") and in mixed case ("Pt.") — so they
+# are canonicalised (textnorm.normalize_company_name) before the dedup key is
+# built, and stripped before website search (textnorm.company_search_term).
+#
+# Every entry MUST be exactly two characters: the SQL canonicalisation in
+# migration 014 slices the first two characters, so a longer prefix would break
+# it. Spelled-out entity words (Koperasi, Yayasan, Perum, Perumda, Firma) are
+# deliberately excluded — they carry no "X." vs "X" dot ambiguity and are never
+# abbreviated in the P3DN dataset.
+LEGAL_ENTITY_PREFIXES: tuple[str, ...] = ("PT", "CV", "UD", "PD", "Fa", "NV")
+
 FTS_TOKENIZER = "porter unicode61 remove_diacritics 2"
 
 VALIDITY_EXPIRING_SOON_DAYS = 60
