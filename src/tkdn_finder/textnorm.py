@@ -14,6 +14,8 @@ import re
 
 from rapidfuzz import utils
 
+from .constants import LEGAL_ENTITY_PREFIXES
+
 _WHITESPACE_RE = re.compile(r"\s+")
 # Unicode hyphen/dash variants that appear interchangeably in P3DN specs
 # (e.g. "Dia. 4 1/2 – 13 3/8 inch" vs "4 1/2 - 13 3/8").
@@ -37,10 +39,42 @@ def match_key(value: str | None) -> str:
     return _WHITESPACE_RE.sub("", _DASH_RE.sub("-", value)).casefold()
 
 
-# Leading legal-entity prefixes ("PT." / "PT" / "CV." ...) — P3DN registers
-# the same company under inconsistent spellings of these.
-_LEGAL_ENTITY_PREFIX_RE = re.compile(r"^(?:pt|cv|ud|pd)\.?\s+", re.IGNORECASE)
+# Leading legal-entity prefix + its separator ("PT." / "PT" / "CV." ...) —
+# P3DN registers the same company under inconsistent spellings of these. The
+# separator is either a trailing dot (optionally followed by spaces) OR
+# whitespace, so "PT. Bumi", "PT.Bumi" and "PT Bumi" all match while "PTBumi"
+# (prefix fused into a word) does not. Recognised prefixes live in constants.
+_PREFIX_ALTERNATION = "|".join(re.escape(p) for p in LEGAL_ENTITY_PREFIXES)
+_LEGAL_ENTITY_PREFIX_RE = re.compile(
+    rf"^(?P<prefix>{_PREFIX_ALTERNATION})(?:\.\s*|\s+)", re.IGNORECASE
+)
 _NON_ALNUM_RE = re.compile(r"[^0-9a-z]+")
+
+
+def normalize_company_name(name: str | None) -> str | None:
+    """Canonicalise a company name so legal-entity prefixes dedupe cleanly.
+
+    P3DN registers the same company under inconsistent prefix spellings —
+    "PT. Bumi Kaya Steel", "PT Bumi Kaya Steel", "pt.bumi kaya steel" — which
+    the (nama_perusahaan, ...) UNIQUE dedup key would otherwise treat as
+    different companies. This rewrites the leading prefix to one canonical form
+    (uppercase, no dot, single trailing space) so every spelling collapses to
+    the same string: "PT Bumi Kaya Steel". Names without a recognised prefix
+    are returned with whitespace collapsed only.
+
+    Keep this in exact lockstep with the SQL canonicalisation in
+    migration 014 — a divergence would let a spelling that migrated one way get
+    re-inserted the other way on the next bulk refresh, resurrecting duplicates.
+    """
+    if not name:
+        return name
+    cleaned = clean_cell_text(name)
+    match = _LEGAL_ENTITY_PREFIX_RE.match(cleaned)
+    if not match:
+        return cleaned
+    prefix = match.group("prefix").upper()
+    rest = cleaned[match.end() :]
+    return f"{prefix} {rest}" if rest else prefix
 
 
 def company_search_term(name: str | None) -> str:

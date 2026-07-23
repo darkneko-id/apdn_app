@@ -7,6 +7,8 @@ import logging
 import sqlite3
 from typing import Any
 
+from .textnorm import normalize_company_name
+
 logger = logging.getLogger(__name__)
 
 
@@ -79,9 +81,12 @@ def merge_and_upsert(conn: sqlite3.Connection, rows: list[dict[str, Any]]) -> di
         try:
             # spesifikasi and tipe are NOT NULL in schema; coerce None → ''
             # so the ON CONFLICT dedup key stays functional across re-ingests.
+            # nama_perusahaan is canonicalised here (the dedup choke point) so
+            # "PT. Bumi Kaya" and "PT Bumi Kaya" collapse to one company row.
             row_with_ts = {
                 **row,
                 "ingested_at": now_str,
+                "nama_perusahaan": normalize_company_name(row.get("nama_perusahaan")),
                 "spesifikasi": row.get("spesifikasi") or "",
                 "tipe": row.get("tipe") or "",
                 "merek": row.get("merek") or "",
