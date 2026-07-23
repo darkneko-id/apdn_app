@@ -69,24 +69,37 @@ class CertificateRow(BaseModel):
         return cls(**d)
 
 
-def compute_validity_label(cert: CertificateRow, today: date, expiring_soon_days: int = 60) -> str:
-    """Return a display label string for a certificate's validity status.
+def compute_validity_label(cert: CertificateRow, today: date) -> str:
+    """Return a display label string combining expiry date and P3DN web presence.
 
-    Labels: 'valid' | 'expiring' | 'expired' | 'p3dn_active' | 'p3dn_not_found' | 'unknown'
+    Labels: 'expired_on_web' | 'not_valid' | 'web_lost' | 'web_active' | 'valid' | 'unknown'
+
+    The two signals — masa_berlaku_akhir (expiry date) and P3DN search.php
+    presence (p3dn_search_last_seen / p3dn_not_found_since) — are independent
+    and combined rather than treated as mutually exclusive: a certificate can
+    have a future expiry date yet no longer appear in P3DN search results
+    (label 'web_lost'), or be past its expiry date yet still appear there
+    (label 'expired_on_web', surfaced for manual verification rather than
+    silently trusting either signal).
     """
-    if cert.masa_berlaku_akhir is not None:
-        if cert.masa_berlaku_akhir < today:
-            return "expired"
-        if (cert.masa_berlaku_akhir - today).days <= expiring_soon_days:
-            return "expiring"
-        return "valid"
-    # No masa_berlaku_akhir — check P3DN tracking. p3dn_not_found_since is the
-    # authoritative absence flag (cleared on the scrape that finds the record
-    # again), so it takes priority over comparing p3dn_search_last_seen to today.
+    present = cert.p3dn_not_found_since is None and cert.p3dn_search_last_seen is not None
+
+    if cert.masa_berlaku_akhir is not None and cert.masa_berlaku_akhir < today:
+        return "expired_on_web" if present else "not_valid"
+
+    # p3dn_not_found_since is the authoritative absence flag (cleared on the
+    # scrape that finds the record again), so check it before p3dn_search_last_seen.
     if cert.p3dn_not_found_since is not None:
-        return "p3dn_not_found"
+        if cert.masa_berlaku_akhir is not None and cert.masa_berlaku_akhir >= today:
+            return "web_lost"
+        return "not_valid"
+
     if cert.p3dn_search_last_seen is not None:
-        return "p3dn_active"
+        return "web_active"
+
+    if cert.masa_berlaku_akhir is not None and cert.masa_berlaku_akhir >= today:
+        return "valid"
+
     return "unknown"
 
 
