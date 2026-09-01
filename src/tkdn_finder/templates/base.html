@@ -56,20 +56,21 @@
         <div class="max-w-screen-2xl mx-auto px-4 sm:px-6">
             <div class="flex items-center justify-between h-14">
                 <div class="flex items-center gap-3">
-                    <a href="/" class="text-base font-semibold tracking-tight text-white hover:text-blue-200 dark:hover:text-gray-300 transition-colors">
+                    <a href="/" class="text-base font-semibold tracking-tight text-white hover:text-blue-200 dark:hover:text-gray-300 focus:outline-none focus:ring-2 focus:ring-white dark:focus:ring-blue-500 rounded transition-colors">
                         TKDN Finder
                     </a>
-                    <span class="text-blue-400 dark:text-gray-600 text-xs hidden sm:block">Sertifikat TKDN Indonesia</span>
+                    <span class="text-blue-100 dark:text-gray-400 text-xs hidden sm:block">Sertifikat TKDN Indonesia</span>
                 </div>
                 <div class="flex items-center gap-1">
                     <!-- Dark mode toggle -->
                     <button
                         @click="$store.ui.toggleDark()"
-                        class="p-2 rounded-md text-blue-200 dark:text-gray-400 hover:text-white dark:hover:text-gray-200 hover:bg-blue-700 dark:hover:bg-gray-800 transition-colors"
+                        class="p-2 rounded-md text-blue-200 dark:text-gray-400 hover:text-white dark:hover:text-gray-200 hover:bg-blue-700 dark:hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-white dark:focus:ring-blue-500 transition-colors"
                         :title="$store.ui.dark ? 'Mode Terang' : 'Mode Gelap'"
+                        :aria-label="$store.ui.dark ? 'Ganti ke mode terang' : 'Ganti ke mode gelap'"
                     >
                         <!-- Sun icon (shown in dark mode) -->
-                        <svg x-show="$store.ui.dark" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <svg x-show="$store.ui.dark" aria-hidden="true" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                             <circle cx="12" cy="12" r="5"/>
                             <line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
                             <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
@@ -77,14 +78,19 @@
                             <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
                         </svg>
                         <!-- Moon icon (shown in light mode) -->
-                        <svg x-show="!$store.ui.dark" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <svg x-show="!$store.ui.dark" aria-hidden="true" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                             <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
                         </svg>
                     </button>
                     <div class="w-px h-4 bg-blue-600 dark:bg-gray-700 mx-1"></div>
-                    <a href="/" class="px-3 py-1.5 text-xs font-medium text-blue-100 dark:text-gray-400 hover:text-white dark:hover:text-gray-200 hover:bg-blue-700 dark:hover:bg-gray-800 rounded-md transition-colors">Pencarian</a>
-                    <a href="/admin" class="px-3 py-1.5 text-xs font-medium text-blue-100 dark:text-gray-400 hover:text-white dark:hover:text-gray-200 hover:bg-blue-700 dark:hover:bg-gray-800 rounded-md transition-colors">Admin</a>
-                    <a href="/bantuan" class="px-3 py-1.5 text-xs font-medium text-blue-100 dark:text-gray-400 hover:text-white dark:hover:text-gray-200 hover:bg-blue-700 dark:hover:bg-gray-800 rounded-md transition-colors">Bantuan</a>
+                    {% set nav_items = [("/", "Pencarian"), ("/admin", "Admin"), ("/bantuan", "Bantuan")] %}
+                    {% for href, label in nav_items %}
+                    {% set is_active = request.url.path == href %}
+                    <a href="{{ href }}"
+                       {% if is_active %}aria-current="page"{% endif %}
+                       class="px-3 py-1.5 text-xs font-medium rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-white dark:focus:ring-blue-500
+                              {% if is_active %}bg-blue-900 dark:bg-gray-800 text-white dark:text-gray-100{% else %}text-blue-100 dark:text-gray-400 hover:text-white dark:hover:text-gray-200 hover:bg-blue-700 dark:hover:bg-gray-800{% endif %}">{{ label }}</a>
+                    {% endfor %}
                 </div>
             </div>
         </div>
@@ -95,7 +101,7 @@
     </main>
 
     <footer class="border-t border-gray-200 dark:border-gray-800 mt-auto">
-        <div class="max-w-screen-2xl mx-auto px-4 py-3 text-center text-xs text-gray-400 dark:text-gray-600">
+        <div class="max-w-screen-2xl mx-auto px-4 py-3 text-center text-xs text-gray-500 dark:text-gray-400">
             TKDN Finder v1.0.0 &mdash; Data: Kemenperin P3DN &mdash; Irsan H. Fadjri (darkneko-id)
         </div>
     </footer>

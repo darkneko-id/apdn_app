@@ -5,7 +5,7 @@
 <div class="max-w-3xl space-y-6">
     <!-- Back link -->
     <div>
-        <a href="javascript:history.back()" class="text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1">
+        <a href="javascript:history.back()" class="text-sm text-blue-600 dark:text-blue-400 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 rounded flex items-center gap-1">
             <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/>
             </svg>
@@ -65,7 +65,7 @@
                         {{ "%.2f"|format(cert.nilai_tkdn) }}<span class="text-lg font-normal">%</span>
                     </p>
                     {% else %}
-                    <p class="text-2xl font-bold text-gray-400 dark:text-gray-600 mt-0.5">—</p>
+                    <p class="text-2xl font-bold text-gray-500 dark:text-gray-400 mt-0.5">—</p>
                     {% endif %}
                 </div>
                 <div>
@@ -82,7 +82,7 @@
                     <p class="text-xs text-red-600 dark:text-red-400">Kadaluarsa {{ days_past }} hari lalu</p>
                     {% endif %}
                     {% else %}
-                    <p class="text-lg font-semibold text-gray-400 dark:text-gray-600 mt-0.5">—</p>
+                    <p class="text-lg font-semibold text-gray-500 dark:text-gray-400 mt-0.5">—</p>
                     {% endif %}
                 </div>
                 {% if cert.tahun_sumber %}
@@ -175,7 +175,7 @@
                 <p class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Status P3DN</p>
                 <p class="mt-1 text-sm text-orange-600 dark:text-orange-400">
                     Tidak ditemukan di pencarian P3DN
-                    <span class="block text-xs text-gray-400 dark:text-gray-600 mt-0.5">
+                    <span class="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                         Dikonfirmasi sejak {{ cert.p3dn_not_found_since.strftime('%d %B %Y') }}
                     </span>
                 </p>
@@ -185,10 +185,10 @@
 
         <!-- Footer -->
         <div class="bg-gray-50 dark:bg-gray-800 px-6 py-3 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
-            <p class="text-xs text-gray-400 dark:text-gray-600">ID internal: {{ cert.id }}</p>
+            <p class="text-xs text-gray-500 dark:text-gray-400">ID internal: {{ cert.id }}</p>
             <a
                 href="/export.xlsx?q={{ cert.nama_produk }}"
-                class="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                class="text-xs text-blue-600 dark:text-blue-400 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
             >
                 Unduh data serupa (Excel)
             </a>

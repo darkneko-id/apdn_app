@@ -8,7 +8,7 @@
         <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-500">
             Cari produk berdasarkan nama, spesifikasi, merek, atau KBLI. Mendukung koreksi typo otomatis.
         </p>
-        <p class="mt-1 text-xs text-gray-400 dark:text-gray-600">
+        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
             Data P3DN terakhir diperbarui:
             {% if last_refresh %}
             <span class="font-medium text-gray-500 dark:text-gray-500">{{ last_refresh | wib }}</span>
@@ -106,7 +106,7 @@
     </form>
 
     <div id="results">
-        <p class="text-xs text-gray-400 dark:text-gray-600 italic">Ketik kata kunci untuk mulai mencari...</p>
+        <p class="text-xs text-gray-500 dark:text-gray-400 italic">Ketik kata kunci untuk mulai mencari...</p>
     </div>
 </div>
 {% endblock %}
