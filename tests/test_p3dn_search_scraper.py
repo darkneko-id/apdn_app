@@ -17,15 +17,25 @@ from tkdn_finder.p3dn_search_scraper import scrape_p3dn_search, upsert_p3dn_rows
 def _find_next_page_link(html: str, page: int) -> str | None:
     """Mirror the pagination detection logic from scrape_p3dn_search."""
     soup = BeautifulSoup(html, "lxml")
-    target_hal = f"hal={page + 1}"
+    target_page_str = str(page + 1)
+    target_hal = f"hal={target_page_str}"
     for a in soup.find_all("a", href=True):
         href = str(a.get("href", ""))
-        idx = href.find(target_hal)
-        if idx == -1:
+        if "search" not in href and "hal=" not in href:
             continue
-        after = href[idx + len(target_hal):]
-        if not after or not after[0].isdigit():
+        anchor_text = a.get_text(strip=True)
+        if anchor_text == target_page_str:
             return href
+        idx = href.find(target_hal)
+        if idx != -1:
+            after = href[idx + len(target_hal):]
+            if not after or not after[0].isdigit():
+                return href
+
+    for a in soup.find_all("a", href=True):
+        anchor_text = a.get_text(strip=True).lower()
+        if "»" in anchor_text or "selanjutnya" in anchor_text or "next" in anchor_text:
+            return str(a.get("href", ""))
     return None
 
 
@@ -33,6 +43,11 @@ class TestPaginationDetection:
     def test_finds_numbered_link(self) -> None:
         html = '<a href="search.php?hal=2">2</a>'
         assert _find_next_page_link(html, 1) is not None
+
+    def test_finds_encrypted_token_by_page_text(self) -> None:
+        """P3DN uses encrypted hash tokens for hal; match by anchor text '2'."""
+        html = '<a href="search.php?where=perush&what=PT&hal=YBSkfmOOVYlx7YS_0ga1yxOlwp0UM52EqEfIxApKuws,">2</a>'
+        assert _find_next_page_link(html, 1) == "search.php?where=perush&what=PT&hal=YBSkfmOOVYlx7YS_0ga1yxOlwp0UM52EqEfIxApKuws,"
 
     def test_finds_next_arrow_link(self) -> None:
         """A 'Next »' button with hal=2 in href should be detected even without digit text."""

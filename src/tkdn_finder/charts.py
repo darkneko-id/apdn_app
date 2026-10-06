@@ -43,11 +43,20 @@ def build_year_trend_chart(
             return width / 2
         return pad_x + plot_w * i / (len(counts) - 1)
 
+    # Ensure tiny fluctuations (e.g. +1 out of 15,000) don't map to a full-height spike.
+    raw_span = max_count - min_count
+    min_span = max(1.0, current * 0.05) if current > 0 else 1.0
+    effective_span = max(float(raw_span), min_span)
+    mid_count = (max_count + min_count) / 2.0
+    y_min_bound = mid_count - effective_span / 2.0
+
     def _y(count: int) -> float:
-        if max_count == min_count:
+        if effective_span <= 0:
             return height / 2
         # Invert: higher count → smaller y (closer to top of the SVG).
-        return pad_y + plot_h * (1 - (count - min_count) / (max_count - min_count))
+        ratio = (count - y_min_bound) / effective_span
+        ratio = max(0.0, min(1.0, ratio))
+        return pad_y + plot_h * (1.0 - ratio)
 
     xs = [_x(i) for i in range(len(counts))]
     ys = [_y(c) for c in counts]

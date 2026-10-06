@@ -25,6 +25,10 @@ class TestParseTkdnPercent:
     def test_comma_decimal_and_percent_sign(self) -> None:
         assert parse_tkdn_percent("35,53 %") == 35.53
         assert parse_tkdn_percent("51.47") == 51.47
+        assert parse_tkdn_percent("0.0%") == 0.0
+        assert parse_tkdn_percent("100,00 %") == 100.0
+        assert parse_tkdn_percent("105 %") is None
+        assert parse_tkdn_percent("-5.0") is None
         assert parse_tkdn_percent("-") is None
         assert parse_tkdn_percent(None) is None
 

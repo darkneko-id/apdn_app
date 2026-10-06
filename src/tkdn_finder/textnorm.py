@@ -140,11 +140,14 @@ def equivalent_text_indices(needle: str, haystack: list[str]) -> list[int]:
 
 
 def parse_tkdn_percent(value: str | None) -> float | None:
-    """Parse a scraped TKDN percentage ('35,53 %', '35.53') to float."""
+    """Parse a scraped TKDN percentage ('35,53 %', '35.53') to float in [0.0, 100.0]."""
     if not value:
         return None
     cleaned = value.replace("%", "").replace(",", ".").strip()
     try:
-        return float(cleaned)
+        val = float(cleaned)
+        if 0.0 <= val <= 100.0:
+            return round(val, 2)
+        return None
     except ValueError:
         return None

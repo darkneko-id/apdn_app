@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import sqlite3
+import urllib.parse
 from datetime import date, datetime, timezone
 from typing import Any
 
@@ -25,6 +26,7 @@ from .textnorm import (
     company_search_term,
     equivalent_text_indices,
     match_key,
+    parse_tkdn_percent,
 )
 
 logger = logging.getLogger(__name__)
@@ -108,17 +110,13 @@ async def scrape_p3dn_search(
     # and search.php substring-matches — the full stored name would only
     # return one spelling's rows. Callers filter results via company_key().
     base_params = {"where": "perush", "what": company_search_term(company_name)}
+    current_params: dict[str, str] = dict(base_params)
 
     async with httpx.AsyncClient(
         follow_redirects=True, timeout=30, verify=verify_ssl
     ) as client:
         while page <= 20:  # safety pagination guard
-            # Always re-issue the original search params plus the page number —
-            # following a bare href from the page (e.g. "search.php?hal=2") can
-            # drop the where/what filter if P3DN's pagination links omit it,
-            # causing unfiltered results to be attributed to this company.
-            params = dict(base_params) if page == 1 else {**base_params, "hal": str(page)}
-            r = await client.get(P3DN_SEARCH_URL, params=params, headers=headers)
+            r = await client.get(P3DN_SEARCH_URL, params=current_params, headers=headers)
 
             r.raise_for_status()
             soup = BeautifulSoup(r.text, "lxml")
@@ -145,13 +143,10 @@ async def scrape_p3dn_search(
                     # Heuristic: find the first column that looks like a TKDN% (float 0-100)
                     tkdn_col: int | None = None
                     for ci, v in enumerate(cells):
-                        try:
-                            val = float(v.replace(",", ".").replace("%", "").strip())
-                            if 0.0 <= val <= 100.0 and ci > 1:
-                                tkdn_col = ci
-                                break
-                        except ValueError:
-                            pass
+                        val = parse_tkdn_percent(v)
+                        if val is not None and ci > 1:
+                            tkdn_col = ci
+                            break
                     if tkdn_col is not None:
                         # Assume col 1=company. Only assign produk/spesifikasi to columns
                         # that exist and don't collide with tkdn_col or each other.
@@ -209,15 +204,8 @@ async def scrape_p3dn_search(
                     )
                     continue
 
-                tkdn_str = _get_col(texts, col_map, "nilai_tkdn") or ""
-                nilai_tkdn: float | None = None
-                if tkdn_str:
-                    try:
-                        nilai_tkdn = float(
-                            tkdn_str.replace(",", ".").replace("%", "").strip()
-                        )
-                    except ValueError:
-                        pass
+                tkdn_str = _get_col(texts, col_map, "nilai_tkdn")
+                nilai_tkdn = parse_tkdn_percent(tkdn_str)
 
                 results.append({
                     "nama_perusahaan": _get_col(texts, col_map, "nama_perusahaan") or company_name,
@@ -232,25 +220,54 @@ async def scrape_p3dn_search(
                     "detail_url": detail_url,
                 })
 
-            # Find next page link by looking for hal=N in href.
-            # Avoid prefix matches: "hal=2" must not match "hal=20".
+            # Find next page link.
+            # search.php may use encrypted token links: e.g.
+            # <a href="search.php?where=perush&what=X&hal=token...">2</a>
+            # or plain hal=2 links.
+            # We match by anchor text (exact page number target or "next" indicator),
+            # or by target_hal in href.
             next_link: str | None = None
-            target_hal = f"hal={page + 1}"
+            target_page_str = str(page + 1)
+            target_hal = f"hal={target_page_str}"
+
             for a in soup.find_all("a", href=True):
                 if not isinstance(a, Tag):
                     continue
                 href = str(a.get("href", ""))
-                idx = href.find(target_hal)
-                if idx == -1:
+                if "search" not in href and "hal=" not in href:
                     continue
-                after = href[idx + len(target_hal):]
-                if not after or not after[0].isdigit():
+
+                anchor_text = a.get_text(strip=True)
+                # Matches exact page number (e.g. '2')
+                if anchor_text == target_page_str:
                     next_link = href
                     break
+
+                # Fallback: check href contains hal=N without trailing digit
+                idx = href.find(target_hal)
+                if idx != -1:
+                    after = href[idx + len(target_hal):]
+                    if not after or not after[0].isdigit():
+                        next_link = href
+                        break
+
+            # If not found by number, check for next arrows (» or selanjutnya)
+            if not next_link:
+                for a in soup.find_all("a", href=True):
+                    if not isinstance(a, Tag):
+                        continue
+                    anchor_text = a.get_text(strip=True).lower()
+                    if "»" in anchor_text or "selanjutnya" in anchor_text or "next" in anchor_text:
+                        next_link = str(a.get("href", ""))
+                        break
 
             if not next_link:
                 break
 
+            # Parse query parameters from next_link while ensuring base search terms are retained
+            parsed_next = urllib.parse.urlsplit(next_link)
+            next_q = dict(urllib.parse.parse_qsl(parsed_next.query))
+            current_params = {**base_params, **next_q}
             page += 1
             await asyncio.sleep(delay_seconds)
 
